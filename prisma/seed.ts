@@ -282,6 +282,62 @@ async function main() {
     }
   }
 
+  console.log("Seeding demo admissions...");
+  const sourceIds = new Map<string, string>();
+  for (const name of ["Website", "Walk-in", "Referral", "Social media"]) {
+    const s = await db.leadSource.upsert({ where: { organizationId_name: { organizationId: org.id, name } }, create: { organizationId: org.id, name }, update: {} });
+    sourceIds.set(name, s.id);
+  }
+  // AdmissionCampaign has no natural unique key: find-then-create.
+  const campaign =
+    (await db.admissionCampaign.findFirst({ where: { organizationId: org.id, name: "Admissions 2027-28", deletedAt: null } })) ??
+    (await db.admissionCampaign.create({
+      data: { organizationId: org.id, name: "Admissions 2027-28", channel: "SOCIAL", startDate: new Date(`${now.getFullYear()}-09-01T00:00:00.000Z`) },
+    }));
+  // Leads have no unique key either; match on (organization, normalized phone).
+  const demoLeads: { name: string; phone: string; email?: string; stage: "NEW" | "CONTACTED" | "QUALIFIED" | "LOST"; source: string; campaign?: boolean; followUp?: string }[] = [
+    { name: "Sunita Verma", phone: "9100000001", email: "sunita.verma@example.com", stage: "NEW", source: "Website", campaign: true },
+    { name: "Mahesh Gupta", phone: "9100000002", stage: "CONTACTED", source: "Walk-in", followUp: `${now.getFullYear()}-09-14` },
+    { name: "Farah Ali", phone: "9100000003", email: "farah.ali@example.com", stage: "QUALIFIED", source: "Referral", followUp: `${now.getFullYear()}-09-16` },
+    { name: "Kiran Bose", phone: "9100000004", stage: "LOST", source: "Social media", campaign: true },
+  ];
+  const leadIds = new Map<string, string>();
+  for (const l of demoLeads) {
+    const lead =
+      (await db.lead.findFirst({ where: { organizationId: org.id, phone: l.phone } })) ??
+      (await db.lead.create({
+        data: {
+          organizationId: org.id,
+          branchId: branch.id,
+          sourceId: sourceIds.get(l.source)!,
+          campaignId: l.campaign ? campaign.id : null,
+          name: l.name,
+          phone: l.phone,
+          email: l.email ?? null,
+          stage: l.stage,
+          assignedCounselorUserId: orgAdmin.id,
+          nextFollowUpAt: l.followUp ? new Date(`${l.followUp}T00:00:00.000Z`) : null,
+        },
+      }));
+    leadIds.set(l.phone, lead.id);
+  }
+  // Farah's application is under review with one document still to verify.
+  const farahId = leadIds.get("9100000003")!;
+  const farahApp =
+    (await db.application.findFirst({ where: { leadId: farahId } })) ??
+    (await db.application.create({
+      data: { leadId: farahId, applicantName: "Zara Ali", gradeAppliedFor: "Grade 2", status: "UNDER_REVIEW", submittedAt: new Date() },
+    }));
+  await db.lead.update({ where: { id: farahId }, data: { stage: "APPLIED" } });
+  for (const [documentType, verified] of [["Birth certificate", true], ["Previous school report", true], ["Address proof", false]] as const) {
+    if (!(await db.applicationDocument.findFirst({ where: { applicationId: farahApp.id, documentType } }))) {
+      await db.applicationDocument.create({ data: { applicationId: farahApp.id, documentType, verified } });
+    }
+  }
+  if (!(await db.appointment.findFirst({ where: { applicationId: farahApp.id } }))) {
+    await db.appointment.create({ data: { applicationId: farahApp.id, type: "INTERVIEW", scheduledAt: new Date(`${now.getFullYear()}-09-18T10:30:00.000Z`) } });
+  }
+
   console.log("Seeding feature flags...");
   // Phase 1 shipped, so SIS defaults on. An organization can still switch it
   // off with a FeatureFlagOverride — that's what the flag is for.
@@ -293,6 +349,11 @@ async function main() {
   await db.featureFlag.upsert({
     where: { key: "phase2.academics" },
     create: { key: "phase2.academics", description: "Academics: subjects, teaching assignments, timetable, attendance (Phase 2)", defaultEnabled: true },
+    update: { defaultEnabled: true },
+  });
+  await db.featureFlag.upsert({
+    where: { key: "phase3.admissions" },
+    create: { key: "phase3.admissions", description: "Admissions CRM: leads, applications, public enquiry form (Phase 3)", defaultEnabled: true },
     update: { defaultEnabled: true },
   });
   await db.featureFlag.upsert({

@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
+import { phoneMatchFilter } from "@/lib/phone";
 import type { EmergencyContactInput, LinkGuardianInput } from "@/modules/sis/schemas";
 import { SisError, type Actor } from "@/modules/sis/students.service";
 
@@ -13,12 +14,12 @@ import { SisError, type Actor } from "@/modules/sis/students.service";
  */
 
 export async function findGuardiansByPhone(organizationId: string, phone: string) {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length < 4) return [];
+  const filter = phoneMatchFilter(phone);
+  if (!filter) return [];
   return db.guardian.findMany({
     where: {
       deletedAt: null,
-      phone: { contains: digits.slice(-8) },
+      phone: filter,
       // Only guardians already attached to a student in THIS organization —
       // Guardian itself is not tenant-scoped, StudentGuardian → Student is.
       studentLinks: { some: { student: { organizationId } } },

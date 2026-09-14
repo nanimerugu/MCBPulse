@@ -101,6 +101,39 @@ export const PERMISSIONS: PermissionDef[] = [
   { module: "academics.attendance", action: "create", description: "Take attendance for a section" },
   { module: "academics.attendance", action: "edit", description: "Correct attendance while the session is still unlocked" },
   { module: "academics.attendance", action: "approve", description: "Lock/unlock sessions, correct after lock, approve or reject student leave" },
+
+  // --- Phase 3: Admissions --------------------------------------------------
+  { module: "admissions.leads", action: "view", description: "View leads and the admissions funnel" },
+  { module: "admissions.leads", action: "create", description: "Create a lead" },
+  { module: "admissions.leads", action: "edit", description: "Edit a lead, add notes, set follow-ups" },
+  { module: "admissions.leads", action: "configure", description: "Move a lead through the pipeline and assign counselors" },
+  { module: "admissions.leads", action: "export", description: "Export leads as CSV" },
+
+  { module: "admissions.applications", action: "view", description: "View applications, documents and appointments" },
+  { module: "admissions.applications", action: "create", description: "Open an application for a lead" },
+  { module: "admissions.applications", action: "edit", description: "Update documents, appointments, and move to review" },
+  { module: "admissions.applications", action: "approve", description: "Offer, waitlist, accept or reject an application; convert an accepted one into a student" },
+
+  { module: "admissions.settings", action: "view", description: "View lead sources and campaigns" },
+  { module: "admissions.settings", action: "configure", description: "Manage lead sources and campaigns" },
+
+  // --- Phase 4: Finance -----------------------------------------------------
+  { module: "finance.fee_structures", action: "view", description: "View fee heads and fee structures" },
+  { module: "finance.fee_structures", action: "configure", description: "Create fee heads and fee structures" },
+
+  { module: "finance.concessions", action: "view", description: "View concessions" },
+  { module: "finance.concessions", action: "approve", description: "Grant a concession to a student" },
+
+  { module: "finance.invoices", action: "view", description: "View invoices and dues" },
+  { module: "finance.invoices", action: "create", description: "Raise invoices from a fee structure" },
+  { module: "finance.invoices", action: "edit", description: "Cancel an unpaid invoice" },
+  { module: "finance.invoices", action: "export", description: "Export dues and collections" },
+
+  { module: "finance.payments", action: "view", description: "View payments and receipts" },
+  { module: "finance.payments", action: "pay", description: "Record a payment and issue a receipt" },
+  { module: "finance.payments", action: "refund", description: "Approve and process refunds" },
+
+  { module: "finance.ledger", action: "view", description: "View the chart of accounts and journal" },
 ];
 
 export function permissionKey(module: string, action: Action): string {

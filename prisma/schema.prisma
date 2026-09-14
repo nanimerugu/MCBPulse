@@ -560,7 +560,8 @@ model Grade {
   name     String
   sequence Int
 
-  sections Section[]
+  sections      Section[]
+  feeStructures FeeStructure[]
 
   createdAt DateTime  @default(now())
   deletedAt DateTime?
@@ -825,6 +826,7 @@ model Lead {
   email                   String?
   stage                   LeadStage @default(NEW)
   assignedCounselorUserId String?
+  nextFollowUpAt          DateTime?
 
   applications Application[]
 
@@ -849,10 +851,14 @@ model Application {
   leadId String
   lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
-  applicantName   String
-  gradeAppliedFor String
-  status          ApplicationStatus @default(DOCUMENTS_PENDING)
-  submittedAt     DateTime?
+  applicantName      String
+  gradeAppliedFor    String
+  status             ApplicationStatus @default(DOCUMENTS_PENDING)
+  submittedAt        DateTime?
+  decidedAt          DateTime?
+  // Set when an ACCEPTED application becomes a Student (blueprint 10.2:
+  // "enrollment creates student master record and links guardians").
+  convertedStudentId String?           @unique
 
   documents    ApplicationDocument[]
   appointments Appointment[]
@@ -1140,11 +1146,16 @@ model FeeStructure {
   branch         Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
   academicYearId String
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  // Optional: the grade this structure is meant for, so raising invoices for
+  // a section can default to the right structure. Null = branch-wide.
+  gradeId        String?
+  grade          Grade?       @relation(fields: [gradeId], references: [id], onDelete: SetNull)
 
   name String
 
   lines       FeeStructureLine[]
   concessions Concession[]
+  invoices    Invoice[]
 
   createdAt DateTime  @default(now())
   deletedAt DateTime?
@@ -1196,11 +1207,14 @@ model Invoice {
   academicYearId String
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
 
-  invoiceNumber String
-  totalAmount   Decimal       @db.Decimal(12, 2)
-  dueDate       DateTime
-  status        InvoiceStatus @default(PENDING)
-  version       Int           @default(1)
+  invoiceNumber  String
+  totalAmount    Decimal       @db.Decimal(12, 2)
+  dueDate        DateTime
+  status         InvoiceStatus @default(PENDING)
+  version        Int           @default(1)
+  // Which structure raised it (null for ad-hoc invoices), for reporting.
+  feeStructureId String?
+  feeStructure   FeeStructure? @relation(fields: [feeStructureId], references: [id], onDelete: SetNull)
 
   lines    InvoiceLine[]
   payments Payment[]

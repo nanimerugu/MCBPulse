@@ -9,6 +9,8 @@ import type { Actor } from "@/modules/sis/students.service";
 
 export const SIS_FLAG = "phase1.sis";
 export const ACADEMICS_FLAG = "phase2.academics";
+export const ADMISSIONS_FLAG = "phase3.admissions";
+export const FINANCE_FLAG = "phase4.finance";
 
 export interface ModuleAccess {
   viewer: ViewerContext;
@@ -96,6 +98,16 @@ export const loadAcademicsAccess = (requestedBranchId: string | undefined, modul
   loadModuleAccess(requestedBranchId, ACADEMICS_FLAG, module, action);
 export const requireAcademicsAccessForAction = (branchId: string | undefined, module: string, action: Action) =>
   requireModuleAccessForAction(branchId, ACADEMICS_FLAG, module, action);
+
+export const loadAdmissionsAccess = (requestedBranchId: string | undefined, module: string, action: Action) =>
+  loadModuleAccess(requestedBranchId, ADMISSIONS_FLAG, module, action);
+export const requireAdmissionsAccessForAction = (branchId: string | undefined, module: string, action: Action) =>
+  requireModuleAccessForAction(branchId, ADMISSIONS_FLAG, module, action);
+
+export const loadFinanceAccess = (requestedBranchId: string | undefined, module: string, action: Action) =>
+  loadModuleAccess(requestedBranchId, FINANCE_FLAG, module, action);
+export const requireFinanceAccessForAction = (branchId: string | undefined, module: string, action: Action) =>
+  requireModuleAccessForAction(branchId, FINANCE_FLAG, module, action);
 
 export function actorOf(access: ModuleAccess): Actor {
   return { userId: access.viewer.userId, organizationId: access.ctx.organizationId };

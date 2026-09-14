@@ -35,12 +35,26 @@ phase gets its own schema slice and its own pass, not one giant change.
    Academics screen restricts such a viewer to the sections they hold a
    teaching assignment in. Code in `src/modules/academics/` and
    `src/app/(app)/academics/`.
-4. **Phase 3+ — schema only.** The rest of the canonical data model from
-   blueprint section 8 (Admissions, LMS, Assessment, Finance, Accounting,
-   HR, Operations, Communication, Files, AI) exists in
-   `prisma/schema.prisma` and migrates cleanly. **No route, permission, or
-   business logic touches any of it yet.** Each module gets wired up in the
-   phase that builds it.
+4. **Phase 3 (Admissions CRM) — working.** Lead sources & campaigns; leads
+   with a pipeline state machine (NEW → CONTACTED → QUALIFIED → APPLIED →
+   ADMITTED, LOST/reopen — APPLIED and ADMITTED are set by the system, never
+   picked), phone-normalized **de-duplication**, counselor assignment,
+   follow-up dates and notes on an audit timeline, a funnel view; applications
+   with their own status machine (documents pending → review → offered /
+   waitlisted → accepted / rejected, decisions gated by `approve`), a document
+   checklist and appointments; **conversion of an accepted application into
+   an SIS student + guardian** in one transaction; a **public enquiry form**
+   per branch (`/apply/<org-slug>/<branch-code>`) with a honeypot, per-IP
+   rate limiting, and duplicate absorption that never reveals whether a phone
+   number is known. Gated by `phase3.admissions` and 11 `admissions.*`
+   permissions. Code in `src/modules/admissions/` and
+   `src/app/(app)/admissions/`, `src/app/apply/`.
+5. **Phase 4+ — schema only.** The rest of the canonical data model from
+   blueprint section 8 (Finance, Accounting, LMS, Assessment, HR, Operations,
+   Communication, Files, AI) exists in `prisma/schema.prisma` and migrates
+   cleanly. **No route or business logic touches any of it yet.** (Finance
+   permissions are already in the catalog and granted to roles ahead of
+   Phase 4; they gate nothing until it lands.)
 
 ## Stack
 
@@ -119,7 +133,12 @@ before this touches anything real.
 | Timetable conflict detection (pure, tested): section / teacher / room overlaps, minute-precise, edit-safe | [`src/modules/academics/timetable-conflicts.ts`](src/modules/academics/timetable-conflicts.ts) |
 | Attendance register: leave-aware defaults, first save creates the session, later saves check each record's `version`, locked sessions need `approve`; summaries where Late counts as attended and Excused leaves the denominator | [`src/modules/academics/attendance.service.ts`](src/modules/academics/attendance.service.ts), [`attendance-summary.ts`](src/modules/academics/attendance-summary.ts) |
 | Teacher daily view: today's slots and sections still awaiting a register | [`src/app/(app)/dashboard/page.tsx`](src/app/(app)/dashboard/page.tsx) |
-| **Schema only:** canonical data model for the Phase 3+ domains (part of 72 tables / 29 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
+| Admissions pipeline: lead and application state machines (pure, tested); system-only APPLIED/ADMITTED | [`src/modules/admissions/pipeline.ts`](src/modules/admissions/pipeline.ts) |
+| One definition of "same phone number" for lead de-dup, guardian reuse and the guardian picker — full-number match, never a suffix | [`src/lib/phone.ts`](src/lib/phone.ts) |
+| Admissions → SIS hand-off: accepted application → Student + Guardian + lead ADMITTED, one transaction, cross-module audit | [`src/modules/admissions/applications.service.ts`](src/modules/admissions/applications.service.ts) |
+| Public enquiry intake: honeypot, in-process per-IP rate limit, silent duplicate absorption | [`src/modules/admissions/public-intake.ts`](src/modules/admissions/public-intake.ts), [`src/app/apply/`](src/app/apply/) |
+| Generic server-action form (fields as children, one client component for many small forms) | [`src/components/action-form.tsx`](src/components/action-form.tsx) |
+| **Schema only:** canonical data model for the Phase 4+ domains (part of 72 tables / 29 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
 
 ## Known limitations / follow-ups
 
@@ -134,10 +153,21 @@ before this touches anything real.
   did *not* emit that DROP — live-DB introspection skips indexes it can't
   represent — but `migrate dev`'s shadow-replay path may still differ, so
   the check stands.)
-- **Phase 3+ tables have no RBAC permissions yet.** `src/lib/permissions.ts`
-  lists foundation, SIS and Academics modules only. Adding a module's
-  permissions belongs with the code that first checks them — an inert
-  permission row nothing gates is just noise in the catalog.
+- **Phase 5+ tables have no RBAC permissions yet.** `src/lib/permissions.ts`
+  lists foundation, SIS, Academics, Admissions and Finance modules. Adding a
+  module's permissions belongs with the code that first checks them.
+- **The public enquiry form has no OTP and no CAPTCHA.** Blueprint 10.5 wants
+  mobile/email OTP validation; that needs an SMS/email provider (Phase 6
+  Connect). Today it has a honeypot, a per-IP rate limit (in-process — move
+  it to Redis before running more than one server), and silent duplicate
+  absorption. WhatsApp/campaign messaging and the chatbot are Phase 6 too.
+- **Admission doesn't collect a fee.** Blueprint 10.2 puts "fee payment"
+  between offer and enrollment; conversion currently creates the student
+  directly. Phase 4 Finance adds the invoice, and the hook is the
+  `Application.convertedStudentId` link.
+- **Follow-ups are manual dates, not automated sequences.** "Automated
+  follow-up schedule creates tasks/reminders" and lead scoring (blueprint
+  11.12) belong to the shared workflow engine (section 12).
 - **A teacher with no teaching assignments sees no students.** That is the
   attribute policy working as specified, but it means "create the staff
   record" and "assign them a subject in a section" are both required before

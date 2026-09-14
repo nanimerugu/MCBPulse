@@ -4,6 +4,8 @@ import type { ModuleAccessResult } from "@/modules/sis/access";
 const FLAG_NAMES: Record<string, string> = {
   "phase1.sis": "Student Information System",
   "phase2.academics": "Academics",
+  "phase3.admissions": "Admissions",
+  "phase4.finance": "Finance",
 };
 
 /** Renders the reason a module page couldn't load, in words the person can act on. */
