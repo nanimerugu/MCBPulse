@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SignOutButton } from "@/components/sign-out-button";
+import { OPS_LANDING_PERMISSION_KEYS } from "@/modules/operations/nav";
 
 /**
  * The global navigation from the blueprint's information architecture
@@ -16,8 +17,19 @@ interface NavItem {
   comingInPhase?: string;
   /** Feature-flag key gating a shipped item. */
   flag?: string;
-  /** Permission that opens it; without this the item is hidden entirely. */
-  permission?: string;
+  /**
+   * Permission(s) that open it; without one the item is hidden entirely.
+   * A list means ANY of them is enough — Operations is six sub-modules with
+   * separate permissions, and a hostel warden holding only `ops.hostel` must
+   * still see the section that contains their work.
+   */
+  permission?: string | readonly string[];
+}
+
+function permits(item: NavItem, held: ReadonlySet<string>): boolean {
+  if (!item.permission) return true;
+  const keys = typeof item.permission === "string" ? [item.permission] : item.permission;
+  return keys.some((k) => held.has(k));
 }
 
 const NAV_SECTIONS: NavItem[] = [
@@ -30,7 +42,7 @@ const NAV_SECTIONS: NavItem[] = [
   { label: "LMS", href: "/lms", flag: "phase5.lms", permission: "lms.assignments:view" },
   { label: "Communication", href: "/connect", flag: "phase6.connect", permission: "connect.broadcasts:view" },
   { label: "HR", href: "/hr", flag: "phase7.hr", permission: "hr.org:view" },
-  { label: "Operations", comingInPhase: "Phase 8" },
+  { label: "Operations", href: "/operations", flag: "phase8.operations", permission: OPS_LANDING_PERMISSION_KEYS },
   { label: "Reports & Analytics", comingInPhase: "Phase 11" },
   { label: "AI Copilot", comingInPhase: "Phase 10" },
 ];
@@ -66,7 +78,7 @@ export function AppShell({
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
           {NAV_SECTIONS.map((item) => {
             const flagOn = !item.flag || enabledFlags.has(item.flag);
-            const permitted = !item.permission || permissions.has(item.permission);
+            const permitted = permits(item, permissions);
             // Shipped, switched on, but not for this person: say nothing at all.
             if (item.href && flagOn && !permitted) return null;
 

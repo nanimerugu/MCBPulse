@@ -539,6 +539,67 @@ async function main() {
     update: {},
   });
 
+  console.log("Seeding demo Operations...");
+  for (const [title, author, copies] of [
+    ["The Wind in the Willows", "Kenneth Grahame", 3],
+    ["Malgudi Days", "R. K. Narayan", 2],
+    ["A Brief History of Time", "Stephen Hawking", 1],
+  ] as const) {
+    if (!(await db.libraryItem.findFirst({ where: { branchId: branch.id, title, deletedAt: null } }))) {
+      await db.libraryItem.create({ data: { branchId: branch.id, title, author, totalCopies: copies, availableCopies: copies } });
+    }
+  }
+
+  for (const [name, sku, unit, qty, reorder] of [
+    ["Whiteboard marker (black)", "STA-WBM-BLK", "box", 12, 5],
+    ["A4 copier paper", "STA-A4-500", "ream", 4, 6],
+    ["First-aid kit refill", "MED-FAK-01", "kit", 3, 2],
+  ] as const) {
+    if (!(await db.inventoryItem.findFirst({ where: { branchId: branch.id, sku, deletedAt: null } }))) {
+      const item = await db.inventoryItem.create({
+        data: { branchId: branch.id, name, sku, unit, quantityOnHand: qty, reorderLevel: reorder },
+      });
+      await db.stockMovement.create({
+        data: { inventoryItemId: item.id, kind: "RECEIPT", quantity: qty, quantityAfter: qty, note: "Opening stock", recordedByUserId: orgAdmin.id },
+      });
+    }
+  }
+
+  const bus =
+    (await db.vehicle.findFirst({ where: { organizationId: org.id, registrationNumber: "KA-01-AB-1234", deletedAt: null } })) ??
+    (await db.vehicle.create({
+      data: { organizationId: org.id, branchId: branch.id, registrationNumber: "KA-01-AB-1234", capacity: 40, driverStaffId: teacherStaff.id },
+    }));
+  const northLoop =
+    (await db.route.findFirst({ where: { branchId: branch.id, name: "North loop — morning", deletedAt: null } })) ??
+    (await db.route.create({ data: { branchId: branch.id, name: "North loop — morning", vehicleId: bus.id } }));
+  for (const [seq, stopName] of [
+    [1, "Jayanagar 4th Block"],
+    [2, "South End Circle"],
+    [3, "Lalbagh West Gate"],
+  ] as const) {
+    await db.routeStop.upsert({
+      where: { routeId_sequence: { routeId: northLoop.id, sequence: seq } },
+      create: { routeId: northLoop.id, name: stopName, sequence: seq },
+      update: { name: stopName },
+    });
+  }
+
+  const nilgiri =
+    (await db.hostelBlock.findFirst({ where: { branchId: branch.id, name: "Nilgiri Block", deletedAt: null } })) ??
+    (await db.hostelBlock.create({ data: { branchId: branch.id, name: "Nilgiri Block" } }));
+  for (const [roomNumber, capacity] of [
+    ["101", 4],
+    ["102", 4],
+    ["201", 2],
+  ] as const) {
+    await db.hostelRoom.upsert({
+      where: { hostelBlockId_roomNumber: { hostelBlockId: nilgiri.id, roomNumber } },
+      create: { hostelBlockId: nilgiri.id, roomNumber, capacity },
+      update: {},
+    });
+  }
+
   console.log("Seeding feature flags...");
   // Phase 1 shipped, so SIS defaults on. An organization can still switch it
   // off with a FeatureFlagOverride — that's what the flag is for.
@@ -575,6 +636,11 @@ async function main() {
   await db.featureFlag.upsert({
     where: { key: "phase7.hr" },
     create: { key: "phase7.hr", description: "HR: departments, positions, staff leave, payroll runs, appraisals, exit (Phase 7)", defaultEnabled: true },
+    update: { defaultEnabled: true },
+  });
+  await db.featureFlag.upsert({
+    where: { key: "phase8.operations" },
+    create: { key: "phase8.operations", description: "Operations: library, inventory, transport, hostel, gate register, infirmary (Phase 8)", defaultEnabled: true },
     update: { defaultEnabled: true },
   });
   await db.featureFlag.upsert({

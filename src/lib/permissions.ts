@@ -184,6 +184,32 @@ export const PERMISSIONS: PermissionDef[] = [
   { module: "hr.appraisals", action: "edit", description: "Record a staff appraisal" },
 
   { module: "hr.exit", action: "edit", description: "Record a staff exit" },
+
+  // --- Phase 8: Operations --------------------------------------------------
+  { module: "ops.library", action: "view", description: "View the library catalogue and loans" },
+  { module: "ops.library", action: "create", description: "Add a title to the catalogue" },
+  { module: "ops.library", action: "edit", description: "Edit a title, issue and return copies" },
+
+  { module: "ops.inventory", action: "view", description: "View stock levels and movements" },
+  { module: "ops.inventory", action: "create", description: "Add an inventory item" },
+  { module: "ops.inventory", action: "edit", description: "Record a stock movement" },
+
+  { module: "ops.transport", action: "view", description: "View vehicles, routes and stops" },
+  { module: "ops.transport", action: "configure", description: "Manage vehicles, routes and stops" },
+  { module: "ops.transport", action: "edit", description: "Allocate a student to a route and stop" },
+
+  { module: "ops.hostel", action: "view", description: "View hostel blocks, rooms and occupancy" },
+  { module: "ops.hostel", action: "configure", description: "Manage hostel blocks and rooms" },
+  { module: "ops.hostel", action: "edit", description: "Allocate a student to a room, or check them out" },
+
+  { module: "ops.visitors", action: "view", description: "View the gate register" },
+  { module: "ops.visitors", action: "edit", description: "Check a visitor in or out" },
+
+  // Health information about a child, so it is never folded into a general
+  // student-view grant — a class teacher who can see a timetable has no
+  // automatic business reading medical complaints.
+  { module: "ops.infirmary", action: "view", description: "View infirmary visits" },
+  { module: "ops.infirmary", action: "edit", description: "Record an infirmary visit" },
 ];
 
 export function permissionKey(module: string, action: Action): string {

@@ -14,6 +14,7 @@ export const FINANCE_FLAG = "phase4.finance";
 export const LMS_FLAG = "phase5.lms";
 export const CONNECT_FLAG = "phase6.connect";
 export const HR_FLAG = "phase7.hr";
+export const OPERATIONS_FLAG = "phase8.operations";
 
 export interface ModuleAccess {
   viewer: ViewerContext;
@@ -126,6 +127,45 @@ export const loadHrAccess = (requestedBranchId: string | undefined, module: stri
   loadModuleAccess(requestedBranchId, HR_FLAG, module, action);
 export const requireHrAccessForAction = (branchId: string | undefined, module: string, action: Action) =>
   requireModuleAccessForAction(branchId, HR_FLAG, module, action);
+
+/**
+ * Branch → flag → "holds at least one of these permissions".
+ *
+ * Operations is six sub-modules behind six permissions, and its landing page
+ * belongs to anyone who works in any of them: a hostel warden holding only
+ * `ops.hostel` must reach it. Gating that page on a single permission would
+ * shut out exactly the people the module is for. The page then shows only
+ * the cards each viewer actually holds.
+ */
+export async function loadModuleAccessAny(
+  requestedBranchId: string | undefined,
+  flag: string,
+  permissions: readonly { module: string; action: Action }[],
+): Promise<ModuleAccessResult> {
+  const viewer = await getViewerContext();
+  if (!viewer) redirect("/login");
+
+  const ctx = await resolveBranchContext(viewer, requestedBranchId);
+  if (!ctx) return { ok: false, reason: "no_branch", viewer, ctx: null, flag };
+
+  if (!(await isFeatureEnabled(flag, ctx.organizationId))) {
+    return { ok: false, reason: "feature_disabled", viewer, ctx, flag };
+  }
+
+  const scope = { organizationId: ctx.organizationId, branchId: ctx.branch.id };
+  for (const p of permissions) {
+    const decision = await resolveAccess(viewer.userId, p.module, p.action, scope);
+    if (decision.allowed) return { ok: true, access: { viewer, ctx, decision } };
+  }
+  return { ok: false, reason: "forbidden", viewer, ctx, flag };
+}
+
+export const loadOpsAccess = (requestedBranchId: string | undefined, module: string, action: Action) =>
+  loadModuleAccess(requestedBranchId, OPERATIONS_FLAG, module, action);
+export const loadOpsAccessAny = (requestedBranchId: string | undefined, permissions: readonly { module: string; action: Action }[]) =>
+  loadModuleAccessAny(requestedBranchId, OPERATIONS_FLAG, permissions);
+export const requireOpsAccessForAction = (branchId: string | undefined, module: string, action: Action) =>
+  requireModuleAccessForAction(branchId, OPERATIONS_FLAG, module, action);
 
 export function actorOf(access: ModuleAccess): Actor {
   return { userId: access.viewer.userId, organizationId: access.ctx.organizationId };

@@ -128,6 +128,8 @@ model Branch {
   inventoryItems InventoryItem[]
   libraryItems   LibraryItem[]
   canteenItems   CanteenItem[]
+  visitorLogs    VisitorLog[]
+  clinicVisits   ClinicVisit[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -467,6 +469,8 @@ model Student {
   hostelAllocations HostelAllocation[]
   libraryIssues     LibraryIssue[]
   leaveRequests     LeaveRequest[]
+  visitorLogs       VisitorLog[]
+  clinicVisits      ClinicVisit[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -560,6 +564,7 @@ model Staff {
   appraisals          Appraisal[]
   vehiclesDriven      Vehicle[]
   leaveRequests       LeaveRequest[]
+  libraryIssues       LibraryIssue[]
   assignmentsAuthored Assignment[]        @relation("AssignmentAuthor")
   submissionsGraded   Submission[]        @relation("SubmissionGrader")
 
@@ -1638,16 +1643,50 @@ model InventoryItem {
   branchId String
   branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
-  name           String
-  sku            String
-  quantityOnHand Int    @default(0)
-  reorderLevel   Int    @default(0)
+  name String
+  sku  String
+  unit String @default("unit")
+
+  // Running total. Only ever moved by applying a StockMovement, never set
+  // directly — see src/modules/operations/stock.ts.
+  quantityOnHand Int @default(0)
+  reorderLevel   Int @default(0)
+
+  movements StockMovement[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   @@unique([branchId, sku])
+}
+
+enum StockMovementKind {
+  RECEIPT
+  ISSUE
+  WRITE_OFF
+  ADJUSTMENT
+}
+
+/**
+ * Why the quantity is what it is. Append-only: a wrong count is corrected
+ * with an ADJUSTMENT movement, never by editing history.
+ */
+model StockMovement {
+  id              String        @id @default(uuid())
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+
+  kind StockMovementKind
+  /** Signed: positive adds to stock, negative removes. */
+  quantity         Int
+  quantityAfter    Int
+  note             String?
+  recordedByUserId String
+
+  createdAt DateTime @default(now())
+
+  @@index([inventoryItemId, createdAt])
 }
 
 model LibraryItem {
@@ -1673,10 +1712,19 @@ model LibraryIssue {
   libraryItem   LibraryItem @relation(fields: [libraryItemId], references: [id], onDelete: Restrict)
   studentId     String?
   student       Student?    @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  // A library lends to staff as well as students; exactly one of the two is
+  // set, enforced in the service (Prisma can't express a CHECK constraint).
+  staffId String?
+  staff   Staff?  @relation(fields: [staffId], references: [id], onDelete: SetNull)
 
-  issuedAt   DateTime  @default(now())
-  dueAt      DateTime
-  returnedAt DateTime?
+  issuedAt         DateTime  @default(now())
+  dueAt            DateTime
+  returnedAt       DateTime?
+  issuedByUserId   String?
+  returnedByUserId String?
+
+  @@index([libraryItemId, returnedAt])
+  @@index([studentId, returnedAt])
 }
 
 model CanteenItem {
@@ -1689,6 +1737,84 @@ model CanteenItem {
 
   createdAt DateTime  @default(now())
   deletedAt DateTime?
+}
+
+enum VisitorKind {
+  GUARDIAN
+  VENDOR
+  CONTRACTOR
+  OFFICIAL
+  ALUMNI
+  OTHER
+}
+
+/**
+ * The gate register (blueprint Phase 8 "visitor"). A safety record first and
+ * an admin convenience second: in an emergency the question is "who is on
+ * site right now", which is every row with checkOutAt still null.
+ *
+ * Deliberately NOT linked to a Guardian row. People arrive at a gate whose
+ * relationship to the school is unknown or unrecorded, and forcing a link
+ * would push the gatekeeper into creating guardian records to let someone in.
+ */
+model VisitorLog {
+  id       String @id @default(uuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name        String
+  phone       String?
+  kind        VisitorKind @default(OTHER)
+  purpose     String
+  /** Free text: the person or place being visited. */
+  whomToMeet  String?
+  /** Optional link when the visitor is here for a specific student. */
+  studentId   String?
+  student     Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  passNumber  String?
+
+  checkInAt         DateTime  @default(now())
+  checkOutAt        DateTime?
+  checkedInByUserId String
+  checkedOutByUserId String?
+
+  @@index([branchId, checkOutAt])
+  @@index([branchId, checkInAt])
+}
+
+enum ClinicOutcome {
+  RETURNED_TO_CLASS
+  SENT_HOME
+  REFERRED_TO_HOSPITAL
+  OBSERVATION
+}
+
+/**
+ * Infirmary visits (blueprint Phase 8 "infirmary"). Health information about
+ * a child, so it sits behind its own permission rather than any general
+ * student-view grant.
+ *
+ * `guardianNotifiedAt` records that someone was told, which is the part a
+ * school is actually answerable for.
+ */
+model ClinicVisit {
+  id        String  @id @default(uuid())
+  branchId  String
+  branch    Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  complaint          String
+  treatment          String?
+  outcome            ClinicOutcome @default(RETURNED_TO_CLASS)
+  temperatureCelsius Decimal?      @db.Decimal(4, 1)
+
+  visitedAt          DateTime  @default(now())
+  guardianNotifiedAt DateTime?
+  recordedByUserId   String
+
+  @@index([branchId, visitedAt])
+  @@index([studentId, visitedAt])
 }
 
 // --- Communication (Connect) -----------------------------------------------

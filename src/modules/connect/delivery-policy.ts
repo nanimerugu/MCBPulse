@@ -117,3 +117,31 @@ export const CHANNEL_LABELS: Record<MessageChannel, string> = {
 export function addressKindFor(channel: MessageChannel): "phone" | "email" {
   return channel === "EMAIL" ? "email" : "phone";
 }
+
+export interface GuardianNotifyOutcome {
+  queued: number;
+  sent: number;
+  /** Who was not contacted and why — opted out, no number on file, duplicate. */
+  suppressed: { name: string; reason: string }[];
+  guardiansOnRecord: number;
+  moduleOff?: boolean;
+  failed?: boolean;
+}
+
+/**
+ * Plain-English account of an urgent notification that reached nobody.
+ * Returns null when at least one guardian was contacted.
+ *
+ * This exists because "recorded" and "the parent knows" are different facts,
+ * and a caller that conflates them is the dangerous case: a nurse who sends a
+ * feverish child home believing the family was told, when the only guardian
+ * on file had opted out of SMS months ago.
+ */
+export function unreachedWarning(outcome: GuardianNotifyOutcome): string | null {
+  if (outcome.queued > 0) return null;
+  if (outcome.moduleOff) return "No guardian was contacted — the Communication module is switched off for this organization. Telephone them.";
+  if (outcome.failed) return "No guardian was contacted — the notification system errored. Telephone them.";
+  if (outcome.guardiansOnRecord === 0) return "No guardian was contacted — this student has no guardian linked to their record. Telephone the family.";
+  const why = outcome.suppressed.map((s) => `${s.name} — ${s.reason.toLowerCase()}`).join("; ");
+  return `No guardian was contacted${why ? `: ${why}` : ""}. Telephone them.`;
+}

@@ -2,7 +2,16 @@ import "server-only";
 import { db } from "@/lib/db";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { CONNECT_FLAG } from "@/modules/sis/access";
-import { addressKindFor, isWithinQuietHours, planDelivery, type QuietHours, type Recipient } from "@/modules/connect/delivery-policy";
+import {
+  addressKindFor,
+  unreachedWarning,
+  type GuardianNotifyOutcome,
+  isWithinQuietHours,
+  planDelivery,
+  SUPPRESSION_LABELS,
+  type QuietHours,
+  type Recipient,
+} from "@/modules/connect/delivery-policy";
 import { getProvider } from "@/modules/connect/providers";
 import { render } from "@/modules/connect/templates";
 
@@ -29,6 +38,12 @@ export interface AbsenceNotice {
   studentId: string;
   dateISO: string;
 }
+
+// Re-exported so callers have one import for "notify and explain the result".
+// The logic itself is pure and lives in delivery-policy.ts, where it can be
+// tested without dragging a database connection into the test run.
+export type { GuardianNotifyOutcome };
+export { unreachedWarning };
 
 /**
  * Tells guardians their child was marked absent (blueprint 11.3 "parent
@@ -131,6 +146,102 @@ export async function notifyAbsences(
     // triggered it.
     console.error("[connect] absence notification failed", e);
     return { queued: 0, sent: 0 };
+  }
+}
+
+/**
+ * Send one already-rendered message to every guardian of one student.
+ *
+ * `urgent` bypasses quiet hours, and Phase 8's infirmary is the first caller
+ * that sets it. Quiet hours exist so a school doesn't text a fee reminder at
+ * 6am; a child running a temperature and being sent home is the exact case
+ * they must not silence. Holding that until 7am would be the system quietly
+ * deciding a parent shouldn't know yet, which is not its decision to make.
+ *
+ * Best-effort like everything else here: never throws into the caller.
+ */
+export async function notifyStudentGuardians(
+  studentId: string,
+  body: string,
+  scope: { organizationId: string },
+  opts: { urgent?: boolean } = {},
+): Promise<GuardianNotifyOutcome> {
+  if (!(await isFeatureEnabled(CONNECT_FLAG, scope.organizationId))) {
+    return { queued: 0, sent: 0, suppressed: [], guardiansOnRecord: 0, moduleOff: true };
+  }
+
+  try {
+    const links = await db.studentGuardian.findMany({
+      where: { studentId, student: { organizationId: scope.organizationId } },
+      include: { guardian: { select: { id: true, firstName: true, lastName: true, phone: true, optOutSms: true } } },
+    });
+    if (links.length === 0) return { queued: 0, sent: 0, suppressed: [], guardiansOnRecord: 0 };
+
+    const channel = "SMS" as const;
+    const provider = getProvider(channel);
+    const plan = planDelivery(
+      links.map((l) => ({
+        key: l.guardian.id,
+        name: `${l.guardian.firstName} ${l.guardian.lastName}`.trim(),
+        address: l.guardian.phone ?? "",
+        channel,
+        // An opt-out is a preference about routine contact, and it is still
+        // honoured here — a school that must reach this parent anyway has to
+        // pick up the phone, which is the right fallback for something this
+        // serious. Suppressions are visible in the delivery log either way.
+        optedOut: l.guardian.optOutSms,
+      })),
+    );
+
+    const quiet = opts.urgent ? null : await quietHoursOf(scope.organizationId);
+    const quietNow = isWithinQuietHours(new Date(), quiet);
+
+    let queued = 0;
+    let sent = 0;
+    for (const planned of plan.send) {
+      const message = await db.message.create({
+        data: {
+          organizationId: scope.organizationId,
+          channel,
+          recipientName: planned.name,
+          recipientAddress: planned.address,
+          body,
+          status: "QUEUED",
+          provider: provider.name,
+        },
+      });
+      queued++;
+      if (quietNow) continue;
+
+      try {
+        const result = await provider.send({ channel, to: planned.address, subject: null, body });
+        await db.message.update({
+          where: { id: message.id },
+          data: {
+            status: result.status,
+            providerMessageId: result.providerMessageId ?? null,
+            failureReason: result.failureReason ?? null,
+            attempts: { increment: 1 },
+            sentAt: result.status === "SENT" ? new Date() : null,
+          },
+        });
+        if (result.status === "SENT") sent++;
+      } catch (e) {
+        await db.message.update({
+          where: { id: message.id },
+          data: { status: "FAILED", failureReason: e instanceof Error ? e.message : "Unknown provider error", attempts: { increment: 1 } },
+        });
+      }
+    }
+    return {
+      queued,
+      sent,
+      suppressed: plan.suppressed.map((s) => ({ name: s.recipient.name, reason: SUPPRESSION_LABELS[s.reason] })),
+      guardiansOnRecord: links.length,
+    };
+  } catch (e) {
+    console.error("[connect] guardian notification failed", e);
+    return { queued: 0, sent: 0, suppressed: [], guardiansOnRecord: 0, failed: true };
   }
 }
 

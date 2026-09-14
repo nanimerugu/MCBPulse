@@ -5,7 +5,7 @@
  *
  * Grants accrue phase by phase: Phase 0 (foundation), Phase 1 (SIS), Phase 2
  * (Academics), Phase 3 (Admissions), Phase 4 (Finance), Phase 5 (LMS),
- * Phase 6 (Connect), Phase 7 (HR). Roles whose modules haven't been built yet (Librarian,
+ * Phase 6 (Connect), Phase 7 (HR), Phase 8 (Operations). Roles whose modules haven't been built yet (Librarian,
  * Transport Manager, ...) still have view-only or empty grants.
  *
  * Teacher and Class Teacher are SECTION-SCOPED roles (see
@@ -207,6 +207,16 @@ const HR_LEADERSHIP = ["hr.org:view", "hr.leave:view", "hr.leave:create", "hr.le
  */
 const HR_SELF = ["hr.org:view"];
 
+const OPS_LIBRARY = ["ops.library:view", "ops.library:create", "ops.library:edit"];
+const OPS_INVENTORY = ["ops.inventory:view", "ops.inventory:create", "ops.inventory:edit"];
+const OPS_TRANSPORT = ["ops.transport:view", "ops.transport:configure", "ops.transport:edit"];
+const OPS_HOSTEL = ["ops.hostel:view", "ops.hostel:configure", "ops.hostel:edit"];
+const OPS_VISITORS = ["ops.visitors:view", "ops.visitors:edit"];
+const OPS_INFIRMARY = ["ops.infirmary:view", "ops.infirmary:edit"];
+const OPS_ALL = [...OPS_LIBRARY, ...OPS_INVENTORY, ...OPS_TRANSPORT, ...OPS_HOSTEL, ...OPS_VISITORS, ...OPS_INFIRMARY];
+/** Leadership sees how the campus is running without operating it. */
+const OPS_READ = ["ops.library:view", "ops.inventory:view", "ops.transport:view", "ops.hostel:view", "ops.visitors:view"];
+
 const ORG_ADMIN_SET = FOUNDATION_ALL.filter((key) => key !== "platform.organizations:create");
 
 export const SYSTEM_ROLES: SystemRoleDef[] = [
@@ -214,13 +224,13 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     key: "platform_admin",
     name: "Platform Admin",
     description: "SaaS operations: all tenants, billing, feature flags",
-    permissions: [...FOUNDATION_ALL, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL],
+    permissions: [...FOUNDATION_ALL, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL, ...OPS_ALL],
   },
   {
     key: "organization_admin",
     name: "Organization Admin",
     description: "Trust/group administration across all branches",
-    permissions: [...ORG_ADMIN_SET, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL],
+    permissions: [...ORG_ADMIN_SET, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL, ...OPS_ALL],
   },
   {
     key: "principal",
@@ -248,6 +258,7 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       ...CONNECT_ALL,
       ...HR_LEADERSHIP,
       "hr.payroll:view",
+      ...OPS_ALL,
     ],
   },
   {
@@ -270,6 +281,7 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       "lms.grades:export",
       ...CONNECT_SENDER,
       ...HR_LEADERSHIP,
+      ...OPS_READ,
     ],
   },
   {
@@ -291,6 +303,7 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       ...LMS_READ,
       ...CONNECT_SENDER,
       ...HR_SELF,
+      "ops.library:view",
     ],
   },
   {
@@ -324,9 +337,9 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     permissions: ["sis.students:view", "sis.guardians:view", ...FINANCE_ALL],
   },
   { key: "hr_manager", name: "HR Manager", description: "Employee lifecycle", permissions: ["sis.staff:view", "sis.staff:create", "sis.staff:edit", "sis.staff:delete", ...HR_ALL] },
-  { key: "librarian", name: "Librarian", description: "Library operations", permissions: ["sis.students:view"] },
-  { key: "transport_manager", name: "Transport Manager", description: "Routes and vehicles", permissions: ["sis.students:view"] },
-  { key: "hostel_warden", name: "Hostel Warden", description: "Hostel administration", permissions: ["sis.students:view"] },
+  { key: "librarian", name: "Librarian", description: "Library operations", permissions: ["sis.students:view", "sis.staff:view", ...OPS_LIBRARY] },
+  { key: "transport_manager", name: "Transport Manager", description: "Routes and vehicles", permissions: ["sis.students:view", ...OPS_TRANSPORT] },
+  { key: "hostel_warden", name: "Hostel Warden", description: "Hostel administration", permissions: ["sis.students:view", ...OPS_HOSTEL, ...OPS_INFIRMARY] },
   {
     key: "counselor",
     name: "Counselor / Admission Agent",
@@ -336,7 +349,7 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
   { key: "parent", name: "Parent", description: "Own child/children information and actions", permissions: [] },
   { key: "student", name: "Student", description: "Own learning and profile records", permissions: [] },
   { key: "driver", name: "Driver", description: "Assigned vehicle/route execution", permissions: [] },
-  { key: "visitor_security", name: "Visitor / Security", description: "Campus entry, visitor module", permissions: [] },
+  { key: "visitor_security", name: "Visitor / Security", description: "Campus entry, visitor module", permissions: ["sis.students:view", ...OPS_VISITORS] },
   { key: "alumni", name: "Alumni", description: "Alumni portal, own profile/community", permissions: [] },
 ];
 

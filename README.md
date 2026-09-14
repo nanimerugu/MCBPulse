@@ -93,10 +93,23 @@ phase gets its own schema slice and its own pass, not one giant change.
    credit bank). **Caveat: the deduction rule is whatever you type — this is
    not a statutory payroll engine** — see below. Gated by `phase7.hr` and 14
    `hr.*` permissions. Code in `src/modules/hr/` and `src/app/(app)/hr/`.
-9. **Phase 8+ — schema only.** Examcell (question banks, papers, online
-   exam attempts) and the rest of blueprint section 8 (Operations, Files,
-   AI) exist in `prisma/schema.prisma` and migrate cleanly. **No route or
-   business logic touches any of it yet.**
+9. **Phase 8 (Operations) — working, six of the eight sub-modules.** Library
+   (catalogue, loans, returns, per-borrower limits), inventory/store (stock
+   with a **movement ledger** behind every number), transport (vehicles,
+   routes, sequenced stops, student allocation), hostel (blocks, rooms,
+   allocation and check-out), the **gate register** (who is on campus right
+   now) and the **infirmary** (clinic visits that tell a guardian). Four of
+   these share one tested invariant — a finite number of places that must
+   never go over or negative — in `src/modules/operations/capacity.ts`, and
+   the two that race under concurrency (a last library copy, the last of a
+   stock item) are enforced by conditional `UPDATE`s rather than
+   read-then-write. Gated by `phase8.operations` and 17 `ops.*` permissions.
+   **Canteen and "store" are not built** — see below. Code in
+   `src/modules/operations/` and `src/app/(app)/operations/`.
+10. **Phase 9+ — schema only.** Examcell (question banks, papers, online
+    exam attempts) and the rest of blueprint section 8 (Files, AI) exist in
+    `prisma/schema.prisma` and migrate cleanly. **No route or business logic
+    touches any of it yet.**
 
 ## Stack
 
@@ -201,10 +214,30 @@ before this touches anything real.
 | Compensation behind its own permission, plus exit that disables the login in the same transaction | [`src/modules/hr/compensation.service.ts`](src/modules/hr/compensation.service.ts) |
 | Seed reconciles system-role grants — a permission removed from a role definition is revoked, not left behind | [`prisma/seed.ts`](prisma/seed.ts) |
 | Nav feature flags derived from the nav items themselves, so a new module can't ship invisible | [`src/components/app-shell.tsx`](src/components/app-shell.tsx) |
-| **Schema only:** canonical data model for the Phase 8+ domains (part of 72 tables / 29 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
+| One capacity invariant shared by hostel rooms, vehicle seats, library copies and stock (pure, tested) | [`src/modules/operations/capacity.ts`](src/modules/operations/capacity.ts) |
+| Last-copy and last-item races enforced by conditional `UPDATE`s, not read-then-write | [`library.service.ts`](src/modules/operations/library.service.ts), [`inventory.service.ts`](src/modules/operations/inventory.service.ts) |
+| Loan rules: derived overdue, fines computed but never charged, per-borrower limits (pure, tested) | [`src/modules/operations/library.ts`](src/modules/operations/library.ts) |
+| Stock movement ledger, so a quantity always has a reason behind it (pure, tested) | [`src/modules/operations/stock.ts`](src/modules/operations/stock.ts) |
+| Urgent guardian notice that overrides quiet hours, and says plainly when it reached nobody (pure, tested) | [`delivery-policy.ts`](src/modules/connect/delivery-policy.ts), [`notify.ts`](src/modules/connect/notify.ts) |
+| **Schema only:** canonical data model for the Phase 9+ domains (part of 75 tables / 32 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
 
 ## Known limitations / follow-ups
 
+- **Canteen is not built, and "store" is the same table as inventory.** The
+  blueprint's Phase 8 names eight sub-modules; the schema carries a
+  `CanteenItem` with a name and a price and nothing else — no wallet, no
+  account, no transaction. A menu with prices and no transactions is a
+  brochure, so it was left out rather than shipped as a stub. A real canteen
+  needs a prepaid wallet, a till, and a link into Finance.
+- **Library fines are calculated and shown, never charged.** `fineMinor()`
+  gives the amount at a per-day rate, and nothing turns it into an invoice
+  line. Whether a school fines at all, waives for siblings, or blocks a
+  report card over 40 rupees is policy, and guessing it would be worse than
+  leaving the hook visible.
+- **Hostel and transport have no billing, and transport has no attendance.**
+  Allocating a bed or a seat records who is where; it does not raise a fee,
+  and nothing records who actually boarded the bus this morning. GPS, route
+  tracking and a driver app are Phase 9's "driver experience".
 - **Payroll is arithmetic, not a statutory engine — do not file with it.**
   A run carries one deduction percentage plus an optional fixed amount, both
   typed in by whoever opens the run and recorded on it. MCBPulse does **not**
