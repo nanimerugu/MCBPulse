@@ -23,6 +23,7 @@ const PARENT_TABS = [
   { href: "/portal/attendance", label: "Attendance" },
   { href: "/portal/work", label: "Work" },
   { href: "/portal/fees", label: "Fees" },
+  { href: "/portal/reports", label: "Reports" },
   { href: "/portal/notices", label: "Notices" },
 ];
 

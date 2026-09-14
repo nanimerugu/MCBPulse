@@ -85,6 +85,7 @@ model Organization {
   fileFolders           FileFolder[]
   fileAssets            FileAsset[]
   aiThreads             AiThread[]
+  gradingScales         GradingScale[]
   aiGenerations         AiGeneration[]
 
   createdAt DateTime  @default(now())
@@ -157,6 +158,7 @@ model AcademicYear {
   feeStructures   FeeStructure[]
   invoices        Invoice[]
   appraisals      Appraisal[]
+  reportCards     ReportCard[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -472,6 +474,7 @@ model Student {
   visitorLogs       VisitorLog[]
   clinicVisits      ClinicVisit[]
   canteenAccount    CanteenAccount?
+  reportCards       ReportCard[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -634,6 +637,7 @@ model Subject {
   questionBanks      QuestionBank[]
   exams              Exam[]
   courses            Course[]
+  reportCardLines    ReportCardLine[]
 
   createdAt DateTime  @default(now())
   deletedAt DateTime?
@@ -2257,4 +2261,108 @@ model AiUsageRecord {
   costUsd   Decimal? @db.Decimal(10, 6)
 
   createdAt DateTime @default(now())
+}
+
+// --- Reporting (report cards) ------------------------------------------------
+
+/**
+ * A school's grading scale. Blueprint 11.14 warns that grading engines are
+ * curriculum-specific, which is exactly why this is DATA rather than code: a
+ * CBSE school, an IB school and a state-board school disagree about what 72%
+ * is called, and none of them are wrong.
+ */
+model GradingScale {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name      String
+  isDefault Boolean @default(false)
+
+  bands       GradingBand[]
+  reportCards ReportCard[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@unique([organizationId, name])
+}
+
+/** One band. `minPercent` is inclusive; bands must not overlap. */
+model GradingBand {
+  id             String       @id @default(uuid())
+  gradingScaleId String
+  gradingScale   GradingScale @relation(fields: [gradingScaleId], references: [id], onDelete: Cascade)
+
+  label       String
+  minPercent  Int
+  description String?
+
+  @@unique([gradingScaleId, label])
+  @@unique([gradingScaleId, minPercent])
+}
+
+enum ReportCardStatus {
+  DRAFT
+  PUBLISHED
+}
+
+/**
+ * A term report for one student — a SNAPSHOT, not a view.
+ *
+ * Once published, the marks on it must not change because somebody later
+ * corrected a gradebook entry. A family that has been handed a report and a
+ * school that is asked about it a year later need the same numbers, so every
+ * figure is copied onto the lines at generation time. Same rule as payslips
+ * and exam paper questions.
+ */
+model ReportCard {
+  id             String       @id @default(uuid())
+  studentId      String
+  student        Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  gradingScaleId String?
+  gradingScale   GradingScale? @relation(fields: [gradingScaleId], references: [id], onDelete: SetNull)
+
+  term   String
+  status ReportCardStatus @default(DRAFT)
+
+  /** Snapshot figures, copied at generation. */
+  overallPercent    Int?
+  overallBand       String?
+  attendancePercent Int?
+  remarks           String?
+
+  lines ReportCardLine[]
+
+  generatedByUserId String
+  generatedAt       DateTime  @default(now())
+  publishedAt       DateTime?
+
+  @@unique([studentId, academicYearId, term])
+  @@index([academicYearId, term])
+}
+
+model ReportCardLine {
+  id           String     @id @default(uuid())
+  reportCardId String
+  reportCard   ReportCard @relation(fields: [reportCardId], references: [id], onDelete: Cascade)
+  subjectId    String?
+  subject      Subject?   @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  /** Copied, so a deleted subject doesn't blank a published report. */
+  subjectName String
+
+  examMarks       Int?
+  examMax         Int?
+  assignmentMarks Int?
+  assignmentMax   Int?
+  percent         Int?
+  band            String?
+  comment         String?
+
+  sequence Int
+
+  @@unique([reportCardId, sequence])
 }

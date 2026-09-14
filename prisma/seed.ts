@@ -770,6 +770,11 @@ async function main() {
     update: { defaultEnabled: true },
   });
   await db.featureFlag.upsert({
+    where: { key: "reporting.cards" },
+    create: { key: "reporting.cards", description: "Report cards: grading scales and term reports", defaultEnabled: true },
+    update: { defaultEnabled: true },
+  });
+  await db.featureFlag.upsert({
     where: { key: "files.storage" },
     create: { key: "files.storage", description: "Files: upload, download and attach documents", defaultEnabled: true },
     update: { defaultEnabled: true },

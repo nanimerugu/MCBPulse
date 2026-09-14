@@ -245,6 +245,12 @@ export const PERMISSIONS: PermissionDef[] = [
   { module: "ops.canteen", action: "view", description: "View the canteen menu and wallets" },
   { module: "ops.canteen", action: "configure", description: "Manage the canteen menu" },
   { module: "ops.canteen", action: "pay", description: "Take payment at the till and top up a wallet" },
+
+  // --- Report cards --------------------------------------------------------
+  { module: "reporting.cards", action: "view", description: "View report cards" },
+  { module: "reporting.cards", action: "create", description: "Generate a report card" },
+  { module: "reporting.cards", action: "publish", description: "Publish a report card to families" },
+  { module: "reporting.scales", action: "configure", description: "Manage grading scales" },
 ];
 
 export function permissionKey(module: string, action: Action): string {

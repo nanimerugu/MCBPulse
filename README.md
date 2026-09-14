@@ -318,6 +318,16 @@ before this touches anything real.
     tops up, not revenue recognised against an invoice. Gated by 3
     `ops.canteen:*` permissions. Code in `src/modules/canteen/`.
 
+18. **Report cards — working.** A configurable **grading scale** (bands are
+    DATA, because a CBSE school, an IB school and a state-board school
+    disagree about what 72% is called and none of them are wrong), and term
+    reports that combine **Examcell marks and LMS coursework** with
+    attendance into a printable card. Every figure is a SNAPSHOT copied at
+    generation, so a gradebook corrected next month never changes a report a
+    family already has; a published report cannot be regenerated. Published
+    reports appear in the parent portal. Gated by `reporting.cards` and 4
+    permissions. Code in `src/modules/reporting/`.
+
 ## Known limitations / follow-ups
 
 - **Phase 9 is a responsive web portal, not native apps.** There is no React
@@ -332,6 +342,12 @@ before this touches anything real.
   invite flow, no email verification, no self-service password reset and no
   OTP. `Guardian.userId` and `Student.userId` are set directly; a real
   deployment needs an onboarding path before any of this reaches a family.
+- **Report cards sum exam and coursework marks rather than weighting them.**
+  A weighting ("exams are 70%") is school policy, and inventing one would put
+  a number on a report card that no teacher chose. Summing both totals is the
+  one combination that needs no policy; configurable weights are the next
+  step. There is also no per-subject teacher comment and no co-scholastic
+  section.
 - **"Store" is the same table as inventory.** The blueprint names both; the
   schema has one InventoryItem and there is no meaningful difference between
   a stationery store and a stock list, so they were not split.
@@ -399,10 +415,6 @@ before this touches anything real.
   describes the teacher's day. Phase 9 gave students a login and a read-only
   view of their marks; uploading an answer needs the Files adapter, which is
   not built.
-- **Report cards are not built.** Examcell now produces exam marks and the
-  LMS produces assignment marks, but nothing combines them into a term
-  report with a grading scale, remarks and a printable layout — that needs a
-  school-specific grading policy (11.14) rather than a guess.
 - **The gradebook shows percentages, not letter grades.** Deliberate: 11.14
   says to "support curriculum-specific grading engines rather than
   hard-coding one grading model", and CBSE, IB and Cambridge disagree about
