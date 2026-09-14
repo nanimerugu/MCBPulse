@@ -207,12 +207,92 @@ async function main() {
     }
   }
 
+  console.log("Seeding demo academics...");
+  const subjectIds = new Map<string, string>();
+  for (const [code, name] of [["ENG", "English"], ["MAT", "Mathematics"], ["SCI", "Science"], ["SST", "Social Studies"], ["HIN", "Hindi"]] as const) {
+    const subject = await db.subject.upsert({
+      where: { organizationId_code: { organizationId: org.id, code } },
+      create: { organizationId: org.id, code, name },
+      update: { name },
+    });
+    subjectIds.set(code, subject.id);
+  }
+  // Curriculum has no natural unique key, so find-then-create.
+  if (!(await db.curriculum.findFirst({ where: { organizationId: org.id, type: "CBSE", deletedAt: null } }))) {
+    await db.curriculum.create({ data: { organizationId: org.id, name: "CBSE", type: "CBSE" } });
+  }
+
+  // A demo teacher with a login, a staff record, a branch-scoped Teacher
+  // role, and teaching assignments — the attribute policy has something to
+  // scope by, and the teacher dashboard has something to show.
+  const teacherRole = await getSystemRole("teacher");
+  const teacherUser = await db.user.upsert({
+    where: { email: "teacher@nalanda-demo.local" },
+    create: { email: "teacher@nalanda-demo.local", name: "Ravi Kumar", passwordHash: await bcrypt.hash("ChangeMe!123", 12), status: "ACTIVE" },
+    update: {},
+  });
+  const teacherStaff = await db.staff.upsert({
+    where: { organizationId_employeeCode: { organizationId: org.id, employeeCode: "T-100" } },
+    create: {
+      organizationId: org.id,
+      branchId: branch.id,
+      userId: teacherUser.id,
+      employeeCode: "T-100",
+      designation: "Mathematics Teacher",
+      joinDate: new Date(`${now.getFullYear()}-04-01T00:00:00.000Z`),
+    },
+    update: {},
+  });
+  await db.roleAssignment.upsert({
+    where: { id: `${teacherUser.id}:${teacherRole.id}:${org.id}:${branch.id}` },
+    create: { id: `${teacherUser.id}:${teacherRole.id}:${org.id}:${branch.id}`, userId: teacherUser.id, roleId: teacherRole.id, organizationId: org.id, branchId: branch.id },
+    update: {},
+  });
+  const assign = async (sectionKey: string, code: string) => {
+    const sectionId = sectionIds.get(sectionKey)!;
+    const subjectId = subjectIds.get(code)!;
+    await db.subjectAssignment.upsert({
+      where: { sectionId_subjectId: { sectionId, subjectId } },
+      create: { sectionId, subjectId, staffId: teacherStaff.id },
+      update: {},
+    });
+  };
+  await assign("Grade 5|A", "MAT");
+  await assign("Grade 5|A", "SCI");
+  await assign("Grade 3|B", "MAT");
+
+  // TimetableSlot has no unique key; check before inserting so re-runs don't duplicate.
+  const slots: { sectionKey: string; code: string; day: "MONDAY" | "TUESDAY" | "WEDNESDAY" | "THURSDAY" | "FRIDAY"; start: string; end: string; room: string }[] = [
+    { sectionKey: "Grade 5|A", code: "MAT", day: "MONDAY", start: "09:00", end: "09:45", room: "R-12" },
+    { sectionKey: "Grade 5|A", code: "MAT", day: "WEDNESDAY", start: "09:00", end: "09:45", room: "R-12" },
+    { sectionKey: "Grade 5|A", code: "MAT", day: "FRIDAY", start: "09:00", end: "09:45", room: "R-12" },
+    { sectionKey: "Grade 5|A", code: "SCI", day: "TUESDAY", start: "10:00", end: "10:45", room: "LAB-1" },
+    { sectionKey: "Grade 5|A", code: "SCI", day: "THURSDAY", start: "10:00", end: "10:45", room: "LAB-1" },
+    { sectionKey: "Grade 3|B", code: "MAT", day: "MONDAY", start: "11:00", end: "11:45", room: "R-04" },
+    { sectionKey: "Grade 3|B", code: "MAT", day: "TUESDAY", start: "11:00", end: "11:45", room: "R-04" },
+    { sectionKey: "Grade 3|B", code: "MAT", day: "THURSDAY", start: "11:00", end: "11:45", room: "R-04" },
+  ];
+  for (const s of slots) {
+    const sectionId = sectionIds.get(s.sectionKey)!;
+    const exists = await db.timetableSlot.findFirst({ where: { sectionId, dayOfWeek: s.day, startTime: s.start } });
+    if (!exists) {
+      await db.timetableSlot.create({
+        data: { sectionId, subjectId: subjectIds.get(s.code)!, staffId: teacherStaff.id, dayOfWeek: s.day, startTime: s.start, endTime: s.end, room: s.room },
+      });
+    }
+  }
+
   console.log("Seeding feature flags...");
   // Phase 1 shipped, so SIS defaults on. An organization can still switch it
   // off with a FeatureFlagOverride — that's what the flag is for.
   await db.featureFlag.upsert({
     where: { key: "phase1.sis" },
     create: { key: "phase1.sis", description: "Student Information System module (Phase 1)", defaultEnabled: true },
+    update: { defaultEnabled: true },
+  });
+  await db.featureFlag.upsert({
+    where: { key: "phase2.academics" },
+    create: { key: "phase2.academics", description: "Academics: subjects, teaching assignments, timetable, attendance (Phase 2)", defaultEnabled: true },
     update: { defaultEnabled: true },
   });
   await db.featureFlag.upsert({
@@ -225,6 +305,7 @@ async function main() {
   console.log("Demo logins (change these passwords before any real use):");
   console.log("  platform-admin@mcbpulse.local / ChangeMe!123  (Platform Admin)");
   console.log("  admin@nalanda-demo.local / ChangeMe!123        (Organization Admin, Nalanda Demo School Group)");
+  console.log("  teacher@nalanda-demo.local / ChangeMe!123      (Teacher, Nalanda Main Campus — Grade 5 A and Grade 3 B only)");
 }
 
 main()

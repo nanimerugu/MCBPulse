@@ -686,11 +686,17 @@ model AttendanceSession {
   id             String  @id @default(uuid())
   sectionId      String
   section        Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  takenByStaffId String
-  takenByStaff   Staff   @relation(fields: [takenByStaffId], references: [id], onDelete: Restrict)
+  takenByStaffId String?
+  takenByStaff   Staff?  @relation(fields: [takenByStaffId], references: [id], onDelete: SetNull)
+  // The login that submitted the register — always known, even when an
+  // administrator with no Staff record takes attendance.
+  takenByUserId  String
 
-  date     DateTime
-  lockedAt DateTime?
+  date           DateTime
+  // Locked registers need academics.attendance:approve to change
+  // (blueprint 11.3: "attendance lock ... with approval for edits").
+  lockedAt       DateTime?
+  lockedByUserId String?
 
   records AttendanceRecord[]
 

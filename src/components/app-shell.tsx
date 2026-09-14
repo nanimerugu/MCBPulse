@@ -21,7 +21,7 @@ const NAV_SECTIONS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Students", href: "/students", flag: "phase1.sis" },
   { label: "Staff", href: "/staff", flag: "phase1.sis" },
-  { label: "Academics", comingInPhase: "Phase 2" },
+  { label: "Academics", href: "/academics", flag: "phase2.academics" },
   { label: "Admissions", comingInPhase: "Phase 3" },
   { label: "Finance", comingInPhase: "Phase 4" },
   { label: "LMS", comingInPhase: "Phase 5" },

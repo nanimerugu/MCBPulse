@@ -36,6 +36,12 @@ export interface StudentListQuery {
   q?: string;
   status?: StudentStatus;
   sectionId?: string;
+  /**
+   * Attribute-policy restriction (src/modules/academics/scope.ts): null or
+   * undefined = unrestricted; an array = only students currently in one of
+   * these sections (an empty array therefore matches nobody).
+   */
+  sectionIds?: string[] | null;
   page?: number;
 }
 
@@ -51,6 +57,7 @@ export async function listStudents(query: StudentListQuery) {
     deletedAt: null,
     ...(query.status ? { status: query.status } : {}),
     ...(query.sectionId ? { currentSectionId: query.sectionId } : {}),
+    ...(query.sectionIds ? { currentSectionId: { in: query.sectionIds } } : {}),
     ...(q
       ? {
           OR: [

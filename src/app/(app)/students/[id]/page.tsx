@@ -8,6 +8,11 @@ import { loadSisAccess, param } from "@/modules/sis/access";
 import { GUARDIAN_RELATIONSHIP_LABELS, STUDENT_STATUS_LABELS, STUDENT_STATUS_TONES, formatDate, fullName } from "@/modules/sis/labels";
 import { allowedActions } from "@/modules/sis/lifecycle";
 import { getStudent360, listEnrollableSections } from "@/modules/sis/students.service";
+import { getSectionScope, sectionInScope } from "@/modules/academics/scope";
+import { studentAttendanceCounts } from "@/modules/academics/attendance.service";
+import { listStudentLeave } from "@/modules/academics/leave.service";
+import { formatRate } from "@/modules/academics/attendance-summary";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import { db } from "@/lib/db";
 import {
   addEmergencyContactAction,
@@ -17,9 +22,11 @@ import {
   removeEmergencyContactAction,
   unlinkGuardianAction,
 } from "@/app/(app)/students/actions";
+import { createLeaveAction, decideLeaveAction } from "@/app/(app)/academics/actions";
 import { LifecycleForm } from "@/app/(app)/students/[id]/lifecycle-form";
 import { GuardianForm, type ExistingGuardianOption } from "@/app/(app)/students/[id]/guardian-form";
 import { EmergencyContactForm } from "@/app/(app)/students/[id]/emergency-contact-form";
+import { LeaveForm } from "@/app/(app)/students/[id]/leave-form";
 
 export default async function StudentProfilePage({
   params,
@@ -45,13 +52,28 @@ export default async function StudentProfilePage({
   if (!data) notFound();
   const { student, timeline } = data;
 
-  const [canEdit, canEnroll, canGuardians, canUnlinkGuardian, canArchive, sections] = await Promise.all([
+  // Attribute policy: teachers only reach students in sections they teach.
+  const sectionScope = await getSectionScope(result.access);
+  if (!sectionInScope(sectionScope, student.currentSectionId)) {
+    return (
+      <>
+        <PageHeader title="Student" />
+        <EmptyState>This student isn&apos;t in one of your assigned sections.</EmptyState>
+      </>
+    );
+  }
+
+  const academicsOn = await isFeatureEnabled("phase2.academics", ctx.organizationId);
+  const [canEdit, canEnroll, canGuardians, canUnlinkGuardian, canArchive, canApproveLeave, sections, attendance, leave] = await Promise.all([
     authorize(viewer.userId, "sis.students", "edit", scope),
     authorize(viewer.userId, "sis.enrollment", "edit", scope),
     authorize(viewer.userId, "sis.guardians", "create", scope),
     authorize(viewer.userId, "sis.guardians", "delete", scope),
     authorize(viewer.userId, "sis.students", "delete", scope),
+    academicsOn ? authorize(viewer.userId, "academics.attendance", "approve", scope) : Promise.resolve(false),
     listEnrollableSections(student.branchId),
+    academicsOn ? studentAttendanceCounts(student.id, student.currentSection?.academicYear.startDate.toISOString().slice(0, 10) ?? null) : Promise.resolve(null),
+    academicsOn ? listStudentLeave(student.id, ctx.organizationId) : Promise.resolve([]),
   ]);
 
   // Guardians already on other students in this org, for sibling linking.
@@ -91,6 +113,11 @@ export default async function StudentProfilePage({
                 : "Not placed in a section"}
             </span>
             <span>· {student.branch.name}</span>
+            {attendance && attendance.total > 0 ? (
+              <span>
+                · attendance {formatRate(attendance.attendedRate)} ({attendance.present + attendance.late}/{attendance.total - attendance.excused})
+              </span>
+            ) : null}
           </span>
         }
         actions={
@@ -204,6 +231,52 @@ export default async function StudentProfilePage({
               </details>
             ) : null}
           </Card>
+
+          {academicsOn ? (
+            <Card title="Leave">
+              {leave.length === 0 ? (
+                <EmptyState>No leave recorded.</EmptyState>
+              ) : (
+                <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                  {leave.map((l) => (
+                    <li key={l.id} className="flex items-center justify-between gap-4 py-2 text-sm">
+                      <div>
+                        <p className="text-zinc-900 dark:text-zinc-50">
+                          {formatDate(l.fromDate)} → {formatDate(l.toDate)}{" "}
+                          <Badge tone={l.status === "APPROVED" ? "green" : l.status === "REJECTED" ? "red" : "amber"}>{l.status}</Badge>
+                        </p>
+                        <p className="text-zinc-500 dark:text-zinc-400">{l.reason}</p>
+                      </div>
+                      {canApproveLeave && l.status === "PENDING" ? (
+                        <div className="flex gap-2">
+                          {(["APPROVED", "REJECTED"] as const).map((decision) => (
+                            <form key={decision} action={decideLeaveAction}>
+                              <input type="hidden" name="branchId" value={ctx.branch.id} />
+                              <input type="hidden" name="studentId" value={student.id} />
+                              <input type="hidden" name="leaveId" value={l.id} />
+                              <input type="hidden" name="decision" value={decision} />
+                              <Button type="submit" variant={decision === "APPROVED" ? "secondary" : "danger"} className="!px-2.5 !py-1 text-xs">
+                                {decision === "APPROVED" ? "Approve" : "Reject"}
+                              </Button>
+                            </form>
+                          ))}
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {canEdit ? (
+                <details className="mt-4">
+                  <summary className="cursor-pointer text-sm font-medium text-zinc-700 dark:text-zinc-200">Record leave</summary>
+                  <div className="mt-3">
+                    <LeaveForm action={createLeaveAction.bind(null, student.id)} branchId={ctx.branch.id} />
+                  </div>
+                </details>
+              ) : null}
+              <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">Approved leave pre-fills the day&apos;s register as Excused and doesn&apos;t count against attendance.</p>
+            </Card>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-6">
@@ -233,7 +306,7 @@ export default async function StudentProfilePage({
               <ol className="flex flex-col gap-3 text-sm">
                 {timeline.map((ev) => (
                   <li key={ev.id} className="border-l-2 border-zinc-200 pl-3 dark:border-zinc-800">
-                    <p className="font-medium text-zinc-900 dark:text-zinc-50">{ev.action.replace("student.", "").replace(/_/g, " ")}</p>
+                    <p className="font-medium text-zinc-900 dark:text-zinc-50">{ev.action.replace(/^(student|guardian|leave)\./, "").replace(/_/g, " ")}</p>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">
                       {ev.createdAt.toISOString().replace("T", " ").slice(0, 16)} · {ev.actorUser?.name ?? "system"}
                     </p>

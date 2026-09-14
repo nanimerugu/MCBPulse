@@ -22,9 +22,22 @@ phase gets its own schema slice and its own pass, not one giant change.
    and by 16 new RBAC permissions (`sis.*`, `academics.structure`).
    Code lives in `src/modules/sis/` (services, pure logic, tests) and
    `src/app/(app)/students|staff|settings/`.
-3. **Phase 2+ — schema only.** The rest of the canonical data model from
-   blueprint section 8 (Attendance, Admissions, LMS, Assessment, Finance,
-   Accounting, HR, Operations, Communication, Files, AI) exists in
+3. **Phase 2 (Academics) — working.** Subjects & curricula, teaching
+   assignments (which teacher takes which subject in which section), a
+   per-section timetable with teacher/section/room **conflict detection**,
+   a daily attendance register with **optimistic locking** on every record,
+   **lock-after-submission** with approve-permission corrections, student
+   leave that pre-fills the register as Excused, 30-day summaries, and a
+   teacher's daily view on the dashboard. Gated by `phase2.academics` and 10
+   new permissions (`academics.*`). This phase also delivers the blueprint's
+   **attribute policy**: `authorize()` now reports when a grant comes only
+   from section-scoped roles (Teacher, Class Teacher), and every SIS and
+   Academics screen restricts such a viewer to the sections they hold a
+   teaching assignment in. Code in `src/modules/academics/` and
+   `src/app/(app)/academics/`.
+4. **Phase 3+ — schema only.** The rest of the canonical data model from
+   blueprint section 8 (Admissions, LMS, Assessment, Finance, Accounting,
+   HR, Operations, Communication, Files, AI) exists in
    `prisma/schema.prisma` and migrates cleanly. **No route, permission, or
    business logic touches any of it yet.** Each module gets wired up in the
    phase that builds it.
@@ -74,6 +87,12 @@ that engine, both learned the hard way:
   npx prisma migrate deploy
   ```
   Read the generated SQL before deploying it.
+- **It sheds connections under concurrency.** A page rendering several
+  queries in parallel plus one extra script was enough to get
+  `Connection terminated unexpectedly` / `ECONNRESET`. The app's pool is
+  capped at 5 with keep-alive (`src/lib/db.ts`) to leave the engine headroom;
+  if you need to run a script against the DB while the dev server is up and
+  it gets reset, stop the dev server first. A real Postgres has none of this.
 
 The seed script prints two demo logins (`platform-admin@mcbpulse.local` and
 `admin@nalanda-demo.local`, both `ChangeMe!123`) — change or delete them
@@ -96,7 +115,11 @@ before this touches anything real.
 | CSV import: RFC 4180 parser, header-alias mapping, row-level validation with duplicate detection (pure, tested); preview + atomic commit that re-validates against fresh DB state | [`src/modules/sis/csv.ts`](src/modules/sis/csv.ts), [`import-validation.ts`](src/modules/sis/import-validation.ts), [`import.service.ts`](src/modules/sis/import.service.ts) |
 | Students / guardians / staff / academic-structure services (tenant-pinned, every mutation audited) | [`src/modules/sis/*.service.ts`](src/modules/sis/) |
 | Student 360 profile with lifecycle actions, sibling-aware guardian linking, and an audit timeline | [`src/app/(app)/students/[id]/page.tsx`](src/app/(app)/students/[id]/page.tsx) |
-| **Schema only:** canonical data model for the Phase 2+ domains (part of 72 tables / 29 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
+| Attribute policy: `resolveAccess()` reports section-scoped grants; `getSectionScope()` turns that into the viewer's assigned sections; SIS/Academics pages filter by it | [`src/lib/rbac.ts`](src/lib/rbac.ts), [`src/modules/academics/scope.ts`](src/modules/academics/scope.ts) |
+| Timetable conflict detection (pure, tested): section / teacher / room overlaps, minute-precise, edit-safe | [`src/modules/academics/timetable-conflicts.ts`](src/modules/academics/timetable-conflicts.ts) |
+| Attendance register: leave-aware defaults, first save creates the session, later saves check each record's `version`, locked sessions need `approve`; summaries where Late counts as attended and Excused leaves the denominator | [`src/modules/academics/attendance.service.ts`](src/modules/academics/attendance.service.ts), [`attendance-summary.ts`](src/modules/academics/attendance-summary.ts) |
+| Teacher daily view: today's slots and sections still awaiting a register | [`src/app/(app)/dashboard/page.tsx`](src/app/(app)/dashboard/page.tsx) |
+| **Schema only:** canonical data model for the Phase 3+ domains (part of 72 tables / 29 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
 
 ## Known limitations / follow-ups
 
@@ -111,15 +134,23 @@ before this touches anything real.
   did *not* emit that DROP — live-DB introspection skips indexes it can't
   represent — but `migrate dev`'s shadow-replay path may still differ, so
   the check stands.)
-- **Phase 2+ tables have no RBAC permissions yet.** `src/lib/permissions.ts`
-  lists foundation and SIS modules only. Adding a module's permissions
-  belongs with the code that first checks them — an inert permission row
-  nothing gates is just noise in the catalog.
-- **Teachers can view every student in the organization.** The blueprint's
-  "assigned classes only" rule is the attribute-policy stage of
-  `authorize()`, which needs a subject/class assignment to scope by — that
-  arrives with Phase 2 Academics. Until then Teacher/Class Teacher grants
-  are deliberately permissive rather than silently broken.
+- **Phase 3+ tables have no RBAC permissions yet.** `src/lib/permissions.ts`
+  lists foundation, SIS and Academics modules only. Adding a module's
+  permissions belongs with the code that first checks them — an inert
+  permission row nothing gates is just noise in the catalog.
+- **A teacher with no teaching assignments sees no students.** That is the
+  attribute policy working as specified, but it means "create the staff
+  record" and "assign them a subject in a section" are both required before
+  a new teacher can do anything — the Staff screen doesn't yet say so.
+  Anyone who also holds a broad role (Principal, Admin) is unscoped.
+- **Attendance is daily, not per period.** Period-wise/subject-wise
+  registers (blueprint 11.3) need a `timetableSlotId` on the session and a
+  different uniqueness rule; the daily register was the right first cut.
+  Substitutions / temporary timetable overrides (11.4) and parent
+  notifications on absence (11.3, Phase 6 Connect) are also deferred.
+- **Attendance lock is manual.** The blueprint's "lock after a configured
+  time" wants a scheduled job; today someone with `approve` locks the
+  register by hand. The data model already carries who locked it and when.
 - **No custom fields or student documents yet.** Custom fields need the
   shared Dynamic Forms engine (blueprint 11.9); documents need the Files
   storage adapter (Phase 8/Files). The `Student.photoFileId` and

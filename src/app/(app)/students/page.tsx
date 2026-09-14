@@ -5,6 +5,7 @@ import { AccessDenied } from "@/components/sis/access-denied";
 import { loadSisAccess, param } from "@/modules/sis/access";
 import { STUDENT_STATUSES, STUDENT_STATUS_LABELS, STUDENT_STATUS_TONES, fullName } from "@/modules/sis/labels";
 import { listEnrollableSections, listStudents } from "@/modules/sis/students.service";
+import { getSectionScope, sectionInScope } from "@/modules/academics/scope";
 import type { StudentStatus } from "@/generated/prisma/enums";
 import { authorize } from "@/lib/rbac";
 
@@ -24,19 +25,24 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
   const { viewer, ctx } = result.access;
   const scope = { organizationId: ctx.organizationId, branchId: ctx.branch.id };
 
+  // Attribute policy: a teacher's view is limited to their assigned sections.
+  const sectionScope = await getSectionScope(result.access);
+
   const q = param(sp, "q") ?? "";
   const statusParam = param(sp, "status");
   const status = STUDENT_STATUSES.includes(statusParam as StudentStatus) ? (statusParam as StudentStatus) : undefined;
-  const sectionId = param(sp, "section") || undefined;
+  const requestedSection = param(sp, "section") || undefined;
+  const sectionId = requestedSection && sectionInScope(sectionScope, requestedSection) ? requestedSection : undefined;
   const page = Math.max(1, Number(param(sp, "page") ?? "1") || 1);
   const imported = param(sp, "imported");
 
-  const [data, sections, canCreate, canExport] = await Promise.all([
-    listStudents({ ...scope, q, status, sectionId, page }),
+  const [data, allSections, canCreate, canExport] = await Promise.all([
+    listStudents({ ...scope, q, status, sectionId, sectionIds: sectionScope.sectionIds, page }),
     listEnrollableSections(ctx.branch.id),
     authorize(viewer.userId, "sis.students", "create", scope),
     authorize(viewer.userId, "sis.students", "export", scope),
   ]);
+  const sections = allSections.filter((s) => sectionInScope(sectionScope, s.id));
 
   const filterQs = (overrides: Record<string, string | undefined>) => {
     const params = new URLSearchParams();
@@ -55,6 +61,7 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
             {ctx.branch.name}
             {ctx.academicYear ? ` · ${ctx.academicYear.name}` : " · no current academic year"} · {data.total} student
             {data.total === 1 ? "" : "s"}
+            {sectionScope.sectionIds !== null ? " · showing only your assigned sections" : ""}
           </>
         }
         actions={
@@ -119,7 +126,11 @@ export default async function StudentsPage({ searchParams }: { searchParams: Pro
 
       {data.items.length === 0 ? (
         <EmptyState>
-          {q || status || sectionId ? "No students match these filters." : "No students in this branch yet. Add one, or import a CSV."}
+          {q || status || sectionId
+            ? "No students match these filters."
+            : sectionScope.sectionIds !== null && sectionScope.sectionIds.length === 0
+              ? "You aren't assigned to any section yet, so there are no students to show."
+              : "No students in this branch yet. Add one, or import a CSV."}
         </EmptyState>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">

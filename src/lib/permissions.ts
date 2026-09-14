@@ -86,6 +86,21 @@ export const PERMISSIONS: PermissionDef[] = [
 
   { module: "academics.structure", action: "view", description: "View grades and sections" },
   { module: "academics.structure", action: "configure", description: "Create and edit grades and sections" },
+
+  // --- Phase 2: Academics ---------------------------------------------------
+  { module: "academics.subjects", action: "view", description: "View subjects and curricula" },
+  { module: "academics.subjects", action: "configure", description: "Create and edit subjects and curricula" },
+
+  { module: "academics.assignments", action: "view", description: "View which teacher takes which subject in which section" },
+  { module: "academics.assignments", action: "configure", description: "Assign or unassign a teacher to a section's subject" },
+
+  { module: "academics.timetable", action: "view", description: "View section and teacher timetables" },
+  { module: "academics.timetable", action: "configure", description: "Add or remove timetable slots" },
+
+  { module: "academics.attendance", action: "view", description: "View attendance and attendance summaries" },
+  { module: "academics.attendance", action: "create", description: "Take attendance for a section" },
+  { module: "academics.attendance", action: "edit", description: "Correct attendance while the session is still unlocked" },
+  { module: "academics.attendance", action: "approve", description: "Lock/unlock sessions, correct after lock, approve or reject student leave" },
 ];
 
 export function permissionKey(module: string, action: Action): string {

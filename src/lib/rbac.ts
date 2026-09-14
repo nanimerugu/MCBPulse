@@ -17,10 +17,24 @@ export class ForbiddenError extends Error {
 }
 
 /**
+ * Roles whose grants are limited to the sections their holder teaches. When
+ * EVERY role granting a permission is one of these, the decision comes back
+ * `sectionScoped: true` and the module must filter by the holder's
+ * SubjectAssignments (see src/modules/academics/scope.ts). One broad role
+ * (a Principal who also teaches) lifts the restriction.
+ */
+export const SECTION_SCOPED_ROLE_KEYS: ReadonlySet<string> = new Set(["teacher", "class_teacher"]);
+
+export interface AccessDecision {
+  allowed: boolean;
+  /** True only when allowed AND every granting role is section-scoped. */
+  sectionScoped: boolean;
+}
+
+/**
  * authorize(user, action, resource) -> tenant_scope -> role_permission ->
  * attribute_policy -> approval_policy -> allow/deny  (blueprint section 5).
  *
- * Phase 0 implements the first two stages:
  *   1. tenant_scope  — only role assignments for this exact organization,
  *      and (if the assignment is branch/year-scoped) this branch/year, are
  *      considered. A branch-scoped assignment never grants access outside
@@ -28,17 +42,19 @@ export class ForbiddenError extends Error {
  *      to every branch in the organization.
  *   2. role_permission — does any matching assignment's role carry the
  *      requested module:action permission?
+ *   3. attribute_policy — reported, not enforced, here: `sectionScoped`
+ *      tells the caller the grant only reaches the holder's own sections.
+ *      Enforcement needs the resource (which section is this student in?),
+ *      so it lives in the module, next to the query it filters.
  *
- * Attribute policies (e.g. "only your own assigned classes") and approval
- * policies arrive with the modules that need them — a Teacher's "only
- * assigned classes" rule belongs to Phase 2 Academics, not here.
+ * Approval policies arrive with the shared workflow engine (section 12).
  */
-export async function authorize(
+export async function resolveAccess(
   userId: string,
   module: string,
   action: Action,
   scope: TenantScope,
-): Promise<boolean> {
+): Promise<AccessDecision> {
   const key = permissionKey(module, action);
 
   const assignments = await db.roleAssignment.findMany({
@@ -52,7 +68,7 @@ export async function authorize(
     },
   });
 
-  return assignments.some((assignment) => {
+  const granting = assignments.filter((assignment) => {
     // null on the assignment means "every branch/year in this org"; a
     // non-null value must match scope exactly. If the resource being
     // checked has no branch/year of its own (scope field is absent), a
@@ -63,6 +79,21 @@ export async function authorize(
     if (assignment.academicYearId && assignment.academicYearId !== scope.academicYearId) return false;
     return assignment.role.rolePermissions.some((rp) => rp.permission.key === key);
   });
+
+  if (granting.length === 0) return { allowed: false, sectionScoped: false };
+  return {
+    allowed: true,
+    sectionScoped: granting.every((a) => SECTION_SCOPED_ROLE_KEYS.has(a.role.key)),
+  };
+}
+
+export async function authorize(
+  userId: string,
+  module: string,
+  action: Action,
+  scope: TenantScope,
+): Promise<boolean> {
+  return (await resolveAccess(userId, module, action, scope)).allowed;
 }
 
 /** Throws ForbiddenError instead of returning false — for route/action guards. */
@@ -71,9 +102,10 @@ export async function requirePermission(
   module: string,
   action: Action,
   scope: TenantScope,
-): Promise<void> {
-  const allowed = await authorize(userId, module, action, scope);
-  if (!allowed) {
+): Promise<AccessDecision> {
+  const decision = await resolveAccess(userId, module, action, scope);
+  if (!decision.allowed) {
     throw new ForbiddenError(`Missing permission ${permissionKey(module, action)}`);
   }
+  return decision;
 }

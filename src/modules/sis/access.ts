@@ -2,50 +2,63 @@ import "server-only";
 import { redirect } from "next/navigation";
 import { getViewerContext, type ViewerContext } from "@/lib/tenant";
 import { resolveBranchContext, type BranchContext } from "@/lib/branch-context";
-import { authorize, requirePermission, ForbiddenError } from "@/lib/rbac";
+import { resolveAccess, requirePermission, ForbiddenError, type AccessDecision } from "@/lib/rbac";
 import type { Action } from "@/lib/permissions";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import type { Actor } from "@/modules/sis/students.service";
 
 export const SIS_FLAG = "phase1.sis";
+export const ACADEMICS_FLAG = "phase2.academics";
 
-export interface SisAccess {
+export interface ModuleAccess {
   viewer: ViewerContext;
   ctx: BranchContext;
+  /** The RBAC decision for the permission the page/action asked about. */
+  decision: AccessDecision;
 }
+/** @deprecated name kept for the Phase 1 code; identical to ModuleAccess. */
+export type SisAccess = ModuleAccess;
 
-export type SisAccessResult =
-  | { ok: true; access: SisAccess }
-  | { ok: false; reason: "no_branch" | "feature_disabled" | "forbidden"; viewer: ViewerContext; ctx: BranchContext | null };
+export type ModuleAccessResult =
+  | { ok: true; access: ModuleAccess }
+  | {
+      ok: false;
+      reason: "no_branch" | "feature_disabled" | "forbidden";
+      viewer: ViewerContext;
+      ctx: BranchContext | null;
+      flag: string;
+    };
+export type SisAccessResult = ModuleAccessResult;
 
 /**
- * The one gate every SIS page passes through, in the blueprint's order:
+ * The one gate every module page passes through, in the blueprint's order:
  * tenant (which branch?) → feature flag → authorize(). Pages render an
  * explanation for each failure instead of a bare 403, because "you have no
  * branch yet" and "you lack sis.students:view" need different fixes.
  */
-export async function loadSisAccess(
+export async function loadModuleAccess(
   requestedBranchId: string | undefined,
+  flag: string,
   module: string,
   action: Action,
-): Promise<SisAccessResult> {
+): Promise<ModuleAccessResult> {
   const viewer = await getViewerContext();
   if (!viewer) redirect("/login");
 
   const ctx = await resolveBranchContext(viewer, requestedBranchId);
-  if (!ctx) return { ok: false, reason: "no_branch", viewer, ctx: null };
+  if (!ctx) return { ok: false, reason: "no_branch", viewer, ctx: null, flag };
 
-  if (!(await isFeatureEnabled(SIS_FLAG, ctx.organizationId))) {
-    return { ok: false, reason: "feature_disabled", viewer, ctx };
+  if (!(await isFeatureEnabled(flag, ctx.organizationId))) {
+    return { ok: false, reason: "feature_disabled", viewer, ctx, flag };
   }
 
-  const allowed = await authorize(viewer.userId, module, action, {
+  const decision = await resolveAccess(viewer.userId, module, action, {
     organizationId: ctx.organizationId,
     branchId: ctx.branch.id,
   });
-  if (!allowed) return { ok: false, reason: "forbidden", viewer, ctx };
+  if (!decision.allowed) return { ok: false, reason: "forbidden", viewer, ctx, flag };
 
-  return { ok: true, access: { viewer, ctx } };
+  return { ok: true, access: { viewer, ctx, decision } };
 }
 
 /**
@@ -55,11 +68,12 @@ export async function loadSisAccess(
  * wrong for a write — so the equality check here is what stops a tampered
  * hidden field from writing into a branch the viewer can't see.
  */
-export async function requireSisAccessForAction(
+export async function requireModuleAccessForAction(
   branchId: string | undefined,
+  flag: string,
   module: string,
   action: Action,
-): Promise<SisAccess> {
+): Promise<ModuleAccess> {
   const viewer = await getViewerContext();
   if (!viewer) throw new ForbiddenError("Not signed in");
   if (!branchId) throw new ForbiddenError("Missing branch");
@@ -67,13 +81,23 @@ export async function requireSisAccessForAction(
   const ctx = await resolveBranchContext(viewer, branchId);
   if (!ctx || ctx.branch.id !== branchId) throw new ForbiddenError("Branch not permitted");
 
-  if (!(await isFeatureEnabled(SIS_FLAG, ctx.organizationId))) throw new ForbiddenError("SIS is not enabled");
+  if (!(await isFeatureEnabled(flag, ctx.organizationId))) throw new ForbiddenError("This module is not enabled");
 
-  await requirePermission(viewer.userId, module, action, { organizationId: ctx.organizationId, branchId });
-  return { viewer, ctx };
+  const decision = await requirePermission(viewer.userId, module, action, { organizationId: ctx.organizationId, branchId });
+  return { viewer, ctx, decision };
 }
 
-export function actorOf(access: SisAccess): Actor {
+export const loadSisAccess = (requestedBranchId: string | undefined, module: string, action: Action) =>
+  loadModuleAccess(requestedBranchId, SIS_FLAG, module, action);
+export const requireSisAccessForAction = (branchId: string | undefined, module: string, action: Action) =>
+  requireModuleAccessForAction(branchId, SIS_FLAG, module, action);
+
+export const loadAcademicsAccess = (requestedBranchId: string | undefined, module: string, action: Action) =>
+  loadModuleAccess(requestedBranchId, ACADEMICS_FLAG, module, action);
+export const requireAcademicsAccessForAction = (branchId: string | undefined, module: string, action: Action) =>
+  requireModuleAccessForAction(branchId, ACADEMICS_FLAG, module, action);
+
+export function actorOf(access: ModuleAccess): Actor {
   return { userId: access.viewer.userId, organizationId: access.ctx.organizationId };
 }
 

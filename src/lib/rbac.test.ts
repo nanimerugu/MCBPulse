@@ -5,17 +5,19 @@ vi.mock("@/lib/db", () => ({
   db: { roleAssignment: { findMany: (...args: unknown[]) => findMany(...args) } },
 }));
 
-const { authorize } = await import("@/lib/rbac");
+const { authorize, resolveAccess } = await import("@/lib/rbac");
 
 function assignment(opts: {
   branchId?: string | null;
   academicYearId?: string | null;
   permissionKeys?: string[];
+  roleKey?: string;
 }) {
   return {
     branchId: opts.branchId ?? null,
     academicYearId: opts.academicYearId ?? null,
     role: {
+      key: opts.roleKey ?? "organization_admin",
       rolePermissions: (opts.permissionKeys ?? ["identity.users:view"]).map((key) => ({
         permission: { key },
       })),
@@ -67,5 +69,42 @@ describe("authorize (tenant scope)", () => {
     findMany.mockResolvedValueOnce([]);
     const allowed = await authorize("u1", "identity.users", "view", { organizationId: "org1" });
     expect(allowed).toBe(false);
+  });
+});
+
+describe("resolveAccess (attribute policy: section scoping)", () => {
+  const scope = { organizationId: "org1", branchId: "branch-a" };
+  const view = ["sis.students:view"];
+
+  it("is section-scoped when the only granting role is a teacher", async () => {
+    findMany.mockResolvedValueOnce([assignment({ branchId: "branch-a", roleKey: "teacher", permissionKeys: view })]);
+    expect(await resolveAccess("u1", "sis.students", "view", scope)).toEqual({ allowed: true, sectionScoped: true });
+  });
+
+  it("is section-scoped for a class teacher too", async () => {
+    findMany.mockResolvedValueOnce([assignment({ branchId: "branch-a", roleKey: "class_teacher", permissionKeys: view })]);
+    expect(await resolveAccess("u1", "sis.students", "view", scope)).toEqual({ allowed: true, sectionScoped: true });
+  });
+
+  it("is NOT section-scoped when any granting role is broad — a principal who also teaches", async () => {
+    findMany.mockResolvedValueOnce([
+      assignment({ branchId: "branch-a", roleKey: "teacher", permissionKeys: view }),
+      assignment({ branchId: null, roleKey: "principal", permissionKeys: view }),
+    ]);
+    expect(await resolveAccess("u1", "sis.students", "view", scope)).toEqual({ allowed: true, sectionScoped: false });
+  });
+
+  it("ignores a broad role that doesn't actually grant the permission", async () => {
+    findMany.mockResolvedValueOnce([
+      assignment({ branchId: "branch-a", roleKey: "teacher", permissionKeys: view }),
+      assignment({ branchId: null, roleKey: "accountant", permissionKeys: ["finance.invoices:view"] }),
+    ]);
+    // Only the teacher grants sis.students:view, so the grant is scoped.
+    expect(await resolveAccess("u1", "sis.students", "view", scope)).toEqual({ allowed: true, sectionScoped: true });
+  });
+
+  it("reports sectionScoped=false when denied", async () => {
+    findMany.mockResolvedValueOnce([assignment({ branchId: "branch-a", roleKey: "teacher", permissionKeys: ["audit.events:view"] })]);
+    expect(await resolveAccess("u1", "sis.students", "view", scope)).toEqual({ allowed: false, sectionScoped: false });
   });
 });
