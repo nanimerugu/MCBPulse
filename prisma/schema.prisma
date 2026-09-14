@@ -471,6 +471,7 @@ model Student {
   leaveRequests     LeaveRequest[]
   visitorLogs       VisitorLog[]
   clinicVisits      ClinicVisit[]
+  canteenAccount    CanteenAccount?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1829,8 +1830,93 @@ model CanteenItem {
   name  String
   price Decimal @db.Decimal(10, 2)
 
+  lines CanteenSaleLine[]
+
   createdAt DateTime  @default(now())
   deletedAt DateTime?
+
+  @@unique([branchId, name])
+}
+
+/**
+ * A student's prepaid canteen wallet. `balance` is a running total in the
+ * same Decimal(12,2) shape as the rest of the money in this system; it is
+ * only ever moved by applying a CanteenTransaction, never set directly.
+ *
+ * Deliberately NOT part of the fee ledger: canteen money is a float a family
+ * tops up and spends down, not revenue recognised against an invoice. Mixing
+ * the two would put lunch money in the trial balance.
+ */
+model CanteenAccount {
+  id        String  @id @default(uuid())
+  studentId String  @unique
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  balance Decimal @default(0) @db.Decimal(12, 2)
+  /** A wallet can be frozen without losing its history or its balance. */
+  active Boolean @default(true)
+
+  transactions CanteenTransaction[]
+  sales        CanteenSale[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum CanteenTransactionKind {
+  TOP_UP
+  PURCHASE
+  REFUND
+  ADJUSTMENT
+}
+
+/** Why the balance is what it is. Append-only. */
+model CanteenTransaction {
+  id        String         @id @default(uuid())
+  accountId String
+  account   CanteenAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  saleId    String?
+  sale      CanteenSale?   @relation(fields: [saleId], references: [id], onDelete: SetNull)
+
+  kind CanteenTransactionKind
+  /** Signed: positive adds to the wallet, negative spends it. */
+  amount        Decimal @db.Decimal(12, 2)
+  balanceAfter  Decimal @db.Decimal(12, 2)
+  note          String?
+  recordedByUserId String
+
+  createdAt DateTime @default(now())
+
+  @@index([accountId, createdAt])
+}
+
+model CanteenSale {
+  id        String         @id @default(uuid())
+  accountId String
+  account   CanteenAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  total Decimal @db.Decimal(12, 2)
+
+  lines        CanteenSaleLine[]
+  transactions CanteenTransaction[]
+
+  soldByUserId String
+  createdAt    DateTime @default(now())
+
+  @@index([accountId, createdAt])
+}
+
+/** Price is COPIED onto the line: a later price change must not rewrite history. */
+model CanteenSaleLine {
+  id            String      @id @default(uuid())
+  saleId        String
+  sale          CanteenSale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  canteenItemId String
+  canteenItem   CanteenItem @relation(fields: [canteenItemId], references: [id], onDelete: Restrict)
+
+  quantity  Int
+  unitPrice Decimal @db.Decimal(10, 2)
+  lineTotal Decimal @db.Decimal(12, 2)
 }
 
 enum VisitorKind {

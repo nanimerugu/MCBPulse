@@ -57,6 +57,7 @@ export default async function OperationsIndexPage({
     { href: "/operations/hostel", title: "Hostel", description: "Blocks, rooms and who sleeps where.", need: "ops.hostel:view" },
     { href: "/operations/visitors", title: "Gate register", description: "Who is on campus right now.", need: "ops.visitors:view" },
     { href: "/operations/infirmary", title: "Infirmary", description: "Clinic visits, and telling a guardian.", need: "ops.infirmary:view" },
+    { href: "/operations/canteen", title: "Canteen", description: "Prepaid wallets, a menu and the till.", need: "ops.canteen:view" },
   ].filter((c) => held.has(c.need));
 
   const stats = [

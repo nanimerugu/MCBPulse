@@ -15,6 +15,7 @@ export const OPS_LANDING_PERMISSIONS: readonly { module: string; action: Action 
   { module: "ops.hostel", action: "view" },
   { module: "ops.visitors", action: "view" },
   { module: "ops.infirmary", action: "view" },
+  { module: "ops.canteen", action: "view" },
 ];
 
 export const OPS_LANDING_PERMISSION_KEYS: readonly string[] = OPS_LANDING_PERMISSIONS.map((p) => `${p.module}:${p.action}`);

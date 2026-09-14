@@ -240,6 +240,11 @@ export const PERMISSIONS: PermissionDef[] = [
   { module: "files.assets", action: "view", description: "Browse and download files" },
   { module: "files.assets", action: "create", description: "Upload a file" },
   { module: "files.assets", action: "delete", description: "Archive a file" },
+
+  // --- Canteen -------------------------------------------------------------
+  { module: "ops.canteen", action: "view", description: "View the canteen menu and wallets" },
+  { module: "ops.canteen", action: "configure", description: "Manage the canteen menu" },
+  { module: "ops.canteen", action: "pay", description: "Take payment at the till and top up a wallet" },
 ];
 
 export function permissionKey(module: string, action: Action): string {

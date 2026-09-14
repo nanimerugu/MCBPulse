@@ -197,13 +197,15 @@ const HR_LEADERSHIP = ["hr.org:view", "hr.leave:view", "hr.leave:create", "hr.le
  * Anyone on staff can see the org chart — who is in which department is not
  * confidential inside a school.
  *
- * Deliberately NOT including hr.leave here. "Let a teacher file their own
- * leave" needs an attribute policy that scopes hr.leave to the requester's
- * own staff record, and that policy doesn't exist yet (same missing piece as
- * the student/parent portal's "own records only"). Granting hr.leave:view
- * without it would let every teacher read every colleague's leave history,
- * and hr.leave:create would let them file leave in someone else's name.
- * Until the scope exists, staff leave stays with HR and school leadership.
+ * Deliberately NOT including hr.leave here, and it never will. `hr.leave` is
+ * the permission to administer OTHER people's leave; granting it to every
+ * teacher would let them read every colleague's history and file leave in
+ * someone else's name, however carefully it were scoped.
+ *
+ * Staff filing their OWN leave is solved instead by /my/leave
+ * (src/modules/hr/self.ts), which takes no permission at all: it resolves
+ * the viewer's own Staff row, and the action has no staffId parameter, so
+ * acting on a colleague's behalf is unexpressible rather than merely denied.
  */
 const HR_SELF = ["hr.org:view"];
 
@@ -211,9 +213,10 @@ const OPS_LIBRARY = ["ops.library:view", "ops.library:create", "ops.library:edit
 const OPS_INVENTORY = ["ops.inventory:view", "ops.inventory:create", "ops.inventory:edit"];
 const OPS_TRANSPORT = ["ops.transport:view", "ops.transport:configure", "ops.transport:edit"];
 const OPS_HOSTEL = ["ops.hostel:view", "ops.hostel:configure", "ops.hostel:edit"];
+const OPS_CANTEEN = ["ops.canteen:view", "ops.canteen:configure", "ops.canteen:pay"];
 const OPS_VISITORS = ["ops.visitors:view", "ops.visitors:edit"];
 const OPS_INFIRMARY = ["ops.infirmary:view", "ops.infirmary:edit"];
-const OPS_ALL = [...OPS_LIBRARY, ...OPS_INVENTORY, ...OPS_TRANSPORT, ...OPS_HOSTEL, ...OPS_VISITORS, ...OPS_INFIRMARY];
+const OPS_ALL = [...OPS_LIBRARY, ...OPS_INVENTORY, ...OPS_TRANSPORT, ...OPS_HOSTEL, ...OPS_VISITORS, ...OPS_INFIRMARY, ...OPS_CANTEEN];
 /** Leadership sees how the campus is running without operating it. */
 const FILES_ALL = ["files.assets:view", "files.assets:create", "files.assets:delete"];
 const FILES_CONTRIBUTOR = ["files.assets:view", "files.assets:create"];
@@ -228,7 +231,7 @@ const ANALYTICS_READ = ["analytics.dashboard:view", "analytics.reports:view"];
 
 const AI_ALL = ["ai.console:view", "ai.usage:view"];
 
-const OPS_READ = ["ops.library:view", "ops.inventory:view", "ops.transport:view", "ops.hostel:view", "ops.visitors:view"];
+const OPS_READ = ["ops.library:view", "ops.inventory:view", "ops.transport:view", "ops.hostel:view", "ops.visitors:view", "ops.canteen:view"];
 
 const ORG_ADMIN_SET = FOUNDATION_ALL.filter((key) => key !== "platform.organizations:create");
 
@@ -319,6 +322,8 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       ...ACADEMICS_READ,
       ...ADMISSIONS_COUNSELOR,
       ...FILES_CONTRIBUTOR,
+      "ops.canteen:view",
+      "ops.canteen:pay",
       ...FINANCE_CASHIER,
       ...LMS_READ,
       ...CONNECT_SENDER,

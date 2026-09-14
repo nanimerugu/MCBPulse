@@ -615,6 +615,12 @@ async function main() {
     }
   }
 
+  for (const [name, price] of [["Vegetable sandwich", "40.00"], ["Fruit bowl", "30.00"], ["Masala chai", "15.00"]] as const) {
+    if (!(await db.canteenItem.findFirst({ where: { branchId: branch.id, name, deletedAt: null } }))) {
+      await db.canteenItem.create({ data: { branchId: branch.id, name, price } });
+    }
+  }
+
   console.log("Seeding demo Examcell...");
   const mathsSubjectId = subjectIds.get("MAT")!;
   let fractionsBank = await db.questionBank.findFirst({ where: { subjectId: mathsSubjectId, name: "Fractions — Grade 5" } });

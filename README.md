@@ -307,6 +307,17 @@ before this touches anything real.
     granting it to every teacher is unsafe however it is scoped. Code in
     `src/modules/hr/self.ts`.
 
+17. **Canteen — working.** A prepaid wallet per student with an append-only
+    transaction ledger, a menu, and a till. A wallet can never go negative: a
+    canteen is not a credit facility, and a child who has run out should be
+    told at the till rather than discover a debt at the end of term. The
+    basket sends item ids and quantities only — prices are read from the menu
+    server-side and copied onto the sale line, so a tampered form cannot set
+    them and a later menu change never rewrites what a family was charged.
+    Deliberately OUTSIDE the fee ledger: canteen money is a float a family
+    tops up, not revenue recognised against an invoice. Gated by 3
+    `ops.canteen:*` permissions. Code in `src/modules/canteen/`.
+
 ## Known limitations / follow-ups
 
 - **Phase 9 is a responsive web portal, not native apps.** There is no React
@@ -321,12 +332,9 @@ before this touches anything real.
   invite flow, no email verification, no self-service password reset and no
   OTP. `Guardian.userId` and `Student.userId` are set directly; a real
   deployment needs an onboarding path before any of this reaches a family.
-- **Canteen is not built, and "store" is the same table as inventory.** The
-  blueprint's Phase 8 names eight sub-modules; the schema carries a
-  `CanteenItem` with a name and a price and nothing else — no wallet, no
-  account, no transaction. A menu with prices and no transactions is a
-  brochure, so it was left out rather than shipped as a stub. A real canteen
-  needs a prepaid wallet, a till, and a link into Finance.
+- **"Store" is the same table as inventory.** The blueprint names both; the
+  schema has one InventoryItem and there is no meaningful difference between
+  a stationery store and a stock list, so they were not split.
 - **Library fines are calculated and shown, never charged.** `fineMinor()`
   gives the amount at a per-day rate, and nothing turns it into an invoice
   line. Whether a school fines at all, waives for siblings, or blocks a
