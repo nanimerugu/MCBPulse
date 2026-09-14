@@ -43,6 +43,12 @@ export interface RosterRow {
   feedback: string;
   version: number | null;
   wasLate: boolean;
+  /** What the student wrote, when they handed in through the portal. */
+  responseText: string | null;
+  /** Their attachment, so the teacher can read what they are marking. */
+  fileAssetId: string | null;
+  fileName: string | null;
+  submittedByStudent: boolean;
 }
 
 /**
@@ -54,7 +60,7 @@ export interface RosterRow {
 export async function getAssignmentRoster(assignmentId: string, organizationId: string) {
   const assignment = await db.assignment.findFirst({
     where: { id: assignmentId, course: { organizationId } },
-    include: { ...assignmentInclude, submissions: true },
+    include: { ...assignmentInclude, submissions: { include: { fileAsset: true } } },
   });
   if (!assignment) return null;
   if (!assignment.sectionId) return { assignment, rows: [] as RosterRow[] };
@@ -77,6 +83,10 @@ export async function getAssignmentRoster(assignmentId: string, organizationId: 
       feedback: sub?.feedback ?? "",
       version: sub?.version ?? null,
       wasLate: isLate(sub?.submittedAt ?? null, assignment.dueAt),
+      responseText: sub?.responseText ?? null,
+      fileAssetId: sub?.fileAssetId ?? null,
+      fileName: sub?.fileAsset?.fileName ?? null,
+      submittedByStudent: sub?.submittedByStudent ?? false,
     };
   });
 

@@ -93,6 +93,28 @@ export function GradingForm({
                 </td>
               </tr>
             ))}
+            {/*
+              A second row per student carrying what they actually handed in.
+              Without it a teacher is asked to mark work they cannot read,
+              which is the obvious gap the moment students submit themselves.
+            */}
+            {rows
+              .filter((r) => r.responseText || r.fileName)
+              .map((r) => (
+                <tr key={`${r.studentId}-work`} className="bg-zinc-50/60 dark:bg-zinc-900/40">
+                  <td colSpan={4} className="px-3 pb-2 pt-0">
+                    <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                      {r.name} handed in{r.submittedByStudent ? " themselves" : ""}
+                    </p>
+                    {r.responseText ? <p className="mt-0.5 text-sm text-zinc-700 dark:text-zinc-300">{r.responseText}</p> : null}
+                    {r.fileAssetId ? (
+                      <a href={`/files/${r.fileAssetId}?branch=${branchId}`} className="mt-0.5 inline-block text-xs font-medium underline">
+                        {r.fileName}
+                      </a>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>

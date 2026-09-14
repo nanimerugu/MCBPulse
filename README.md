@@ -328,16 +328,26 @@ before this touches anything real.
     reports appear in the parent portal. Gated by `reporting.cards` and 4
     permissions. Code in `src/modules/reporting/`.
 
+19. **Student submissions — working.** Students hand in their own work from
+    the portal, with a written answer, a file, or both, reusing the Files
+    module's validation wholesale. Only a STUDENT may submit — a parent sees
+    the marks but handing in is not theirs to do — only for an assignment
+    published to their own section (resolved from their record, never the
+    form), and never after a teacher has graded it. Late work is recorded,
+    not refused: whether a late hand-in counts is a teacher's decision. The
+    grading roster shows what was handed in, so nobody is asked to mark work
+    they cannot read.
+
 ## Known limitations / follow-ups
 
 - **Phase 9 is a responsive web portal, not native apps.** There is no React
   Native, no app store build, no push notification and no offline mode. The
   blueprint's "driver experience" here is a read-only manifest — there is no
   GPS, no live tracking and no boarding scan.
-- **The portal is read-only.** A parent can see dues but cannot pay (no
-  gateway), a student can see work but cannot submit it, and nobody can
-  update their own contact details. Every write still goes through the
-  school office.
+- **The portal is read-only apart from handing in work.** A parent can see
+  dues but cannot pay (no gateway), and nobody can update their own contact
+  details. Student submission is the one write, and it is the student's
+  alone — a parent cannot submit on their behalf.
 - **Portal logins are created by the seed, not by the product.** There is no
   invite flow, no email verification, no self-service password reset and no
   OTP. `Guardian.userId` and `Student.userId` are set directly; a real
@@ -410,11 +420,6 @@ before this touches anything real.
   lists foundation, SIS, Academics, Admissions, Finance, LMS, Connect, HR
   and Operations modules. Adding a module's permissions belongs with the
   code that first checks them.
-- **Students don't submit their own work.** Teachers record submissions and
-  marks, which matches how offline work actually arrives and how §10.3
-  describes the teacher's day. Phase 9 gave students a login and a read-only
-  view of their marks; uploading an answer needs the Files adapter, which is
-  not built.
 - **The gradebook shows percentages, not letter grades.** Deliberate: 11.14
   says to "support curriculum-specific grading engines rather than
   hard-coding one grading model", and CBSE, IB and Cambridge disagree about

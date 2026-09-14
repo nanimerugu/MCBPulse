@@ -1060,6 +1060,10 @@ model Submission {
 
   status          SubmissionStatus @default(PENDING)
   submittedAt     DateTime?
+  /** What the student wrote, when they hand in through the portal. */
+  responseText    String?
+  /** True when the student submitted it themselves rather than a teacher recording it. */
+  submittedByStudent Boolean @default(false)
   fileAssetId     String?
   fileAsset       FileAsset?       @relation(fields: [fileAssetId], references: [id], onDelete: SetNull)
   marksAwarded    Int?
