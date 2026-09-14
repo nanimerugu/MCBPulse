@@ -16,6 +16,7 @@ export const CONNECT_FLAG = "phase6.connect";
 export const HR_FLAG = "phase7.hr";
 export const OPERATIONS_FLAG = "phase8.operations";
 export const AI_FLAG = "ai.copilot";
+export const ANALYTICS_FLAG = "phase11.analytics";
 
 export interface ModuleAccess {
   viewer: ViewerContext;
@@ -192,6 +193,9 @@ export const loadAiAccess = (requestedBranchId: string | undefined, module: stri
   loadModuleAccess(requestedBranchId, AI_FLAG, module, action);
 export const requireAiAccessForAction = (branchId: string | undefined, module: string, action: Action) =>
   requireModuleAccessForAction(branchId, AI_FLAG, module, action);
+
+export const loadAnalyticsAccess = (requestedBranchId: string | undefined, module: string, action: Action) =>
+  loadModuleAccess(requestedBranchId, ANALYTICS_FLAG, module, action);
 
 export function actorOf(access: ModuleAccess): Actor {
   return { userId: access.viewer.userId, organizationId: access.ctx.organizationId };

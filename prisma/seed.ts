@@ -709,6 +709,11 @@ async function main() {
     update: { defaultEnabled: true },
   });
   await db.featureFlag.upsert({
+    where: { key: "phase11.analytics" },
+    create: { key: "phase11.analytics", description: "Analytics: cross-module dashboard and report catalogue (Phase 11)", defaultEnabled: true },
+    update: { defaultEnabled: true },
+  });
+  await db.featureFlag.upsert({
     where: { key: "ai.copilot" },
     create: { key: "ai.copilot", description: "AI Gateway: capabilities, redaction, usage accounting (Phase 10)", defaultEnabled: true },
     update: { defaultEnabled: true },

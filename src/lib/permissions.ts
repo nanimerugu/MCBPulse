@@ -217,6 +217,14 @@ export const PERMISSIONS: PermissionDef[] = [
   // who may open the AI console and who may see what it has cost.
   { module: "ai.console", action: "view", description: "Open the AI assistant" },
   { module: "ai.usage", action: "view", description: "View AI usage, cost and generation history" },
+
+  // --- Phase 11: Analytics -------------------------------------------------
+  // Opening the dashboard is one permission; each REPORT additionally
+  // requires the permission of the module it reads (see
+  // src/modules/analytics/reports.ts), so reporting can never widen access.
+  { module: "analytics.dashboard", action: "view", description: "View cross-module dashboards" },
+  { module: "analytics.reports", action: "view", description: "Open the report catalogue" },
+  { module: "analytics.reports", action: "export", description: "Download a report as CSV" },
 ];
 
 export function permissionKey(module: string, action: Action): string {

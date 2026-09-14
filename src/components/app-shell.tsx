@@ -43,7 +43,7 @@ const NAV_SECTIONS: NavItem[] = [
   { label: "Communication", href: "/connect", flag: "phase6.connect", permission: "connect.broadcasts:view" },
   { label: "HR", href: "/hr", flag: "phase7.hr", permission: "hr.org:view" },
   { label: "Operations", href: "/operations", flag: "phase8.operations", permission: OPS_LANDING_PERMISSION_KEYS },
-  { label: "Reports & Analytics", comingInPhase: "Phase 11" },
+  { label: "Reports & Analytics", href: "/analytics", flag: "phase11.analytics", permission: "analytics.dashboard:view" },
   { label: "AI Copilot", href: "/ai", flag: "ai.copilot", permission: "ai.console:view" },
 ];
 

@@ -131,7 +131,20 @@ phase gets its own schema slice and its own pass, not one giant change.
     as Connect. The gateway deliberately cannot write: every capability
     returns text for a person to accept or reject. Gated by `ai.copilot` and
     2 `ai.*` permissions. Code in `src/modules/ai/`.
-12. **Phase 11+ — schema only.** Examcell (question banks, papers, online
+12. **Phase 11 (Analytics) — working.** A cross-module dashboard and a
+    **report catalogue** with CSV export. Analytics owns no tables: every
+    figure is computed from the module that owns it, using that module's own
+    helpers (`paidMinorOf`, `summarize`), so a dashboard can never disagree
+    with the fee desk. A report is a fixed DECLARATION — one permission, one
+    column set, one hand-written query — not a user-composed filter that
+    becomes SQL, so the reporting layer cannot be turned into an
+    exfiltration tool. Each report requires the permission of the module it
+    reads (the staff directory has no pay column because it requires
+    `sis.staff:view`, not `hr.compensation:view`), and that check is
+    repeated on the export route rather than inherited from the page. Gated
+    by `phase11.analytics` and 3 `analytics.*` permissions. Code in
+    `src/modules/analytics/`.
+13. **Phase 12+ — schema only.** Examcell (question banks, papers, online
     exam attempts) and the rest of blueprint section 8 (Files, AI) exist in
     `prisma/schema.prisma` and migrate cleanly. **No route or business logic
     touches any of it yet.**
