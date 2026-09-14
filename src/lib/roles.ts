@@ -78,6 +78,8 @@ const ACADEMICS_ALL = [
   "academics.attendance:create",
   "academics.attendance:edit",
   "academics.attendance:approve",
+  "academics.substitutions:view",
+  "academics.substitutions:configure",
 ];
 const ACADEMICS_READ = ["academics.subjects:view", "academics.assignments:view", "academics.timetable:view", "academics.attendance:view"];
 const TEACHER_ACADEMICS = [...ACADEMICS_READ, "academics.attendance:create", "academics.attendance:edit"];
@@ -303,6 +305,9 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       "academics.timetable:configure",
       "academics.assignments:configure",
       "academics.attendance:approve",
+      // Arranging the day's cover is classically the vice principal's morning.
+      "academics.substitutions:view",
+      "academics.substitutions:configure",
       ...ADMISSIONS_READ,
       "admissions.applications:approve",
       ...FINANCE_READ,

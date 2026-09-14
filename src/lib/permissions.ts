@@ -107,6 +107,12 @@ export const PERMISSIONS: PermissionDef[] = [
   { module: "academics.attendance", action: "edit", description: "Correct attendance while the session is still unlocked" },
   { module: "academics.attendance", action: "approve", description: "Lock/unlock sessions, correct after lock, approve or reject student leave" },
 
+  // Taking a PERIOD register uses academics.attendance:create — it is the
+  // same act as taking a daily one. Arranging cover is its own permission:
+  // it moves a teacher, which a teacher can't do to a colleague.
+  { module: "academics.substitutions", action: "view", description: "View the day's lessons, who is away and who is covering" },
+  { module: "academics.substitutions", action: "configure", description: "Arrange or cancel cover for a lesson" },
+
   // --- Phase 3: Admissions --------------------------------------------------
   { module: "admissions.leads", action: "view", description: "View leads and the admissions funnel" },
   { module: "admissions.leads", action: "create", description: "Create a lead" },

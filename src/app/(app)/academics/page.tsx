@@ -25,6 +25,8 @@ export default async function AcademicsIndexPage({
 
   const cards = [
     { href: "/academics/attendance", title: "Attendance", description: "Take or correct a section's daily register; 30-day summaries." },
+    { href: "/academics/periods", title: "Lesson registers", description: "Period-wise attendance: who was in each lesson, beside what the daily register says." },
+    { href: "/academics/substitutions", title: "Cover", description: "Who's away today, which lessons need a teacher, and who is free to take them." },
     { href: "/academics/timetable", title: "Timetable", description: "Weekly slots per section, with teacher/room/section conflict checks." },
     ...(staff ? [{ href: "/academics/timetable?view=me", title: "My timetable", description: "Your own week, across every section you teach." }] : []),
     { href: "/academics/assignments", title: "Teaching assignments", description: "Which teacher takes which subject in which section — also what scopes a teacher's view." },

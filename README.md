@@ -455,6 +455,35 @@ before this touches anything real.
     `src/modules/reporting/band-input.ts`,
     `src/modules/reporting/report-cards.service.ts`.
 
+24. **Lesson registers and cover — working.** Two blueprint 11.3/11.4
+    items that the daily register had deferred.
+    - **Period-wise attendance** (`/academics/periods`): a register per
+      timetabled lesson per day, kept SEPARATE from the daily register, which
+      stays the official record that absence notices, summaries and report
+      cards read. Each row shows what the daily register says, and a child
+      marked present this morning but absent from this lesson is highlighted —
+      that gap is the point. A teacher sees their own day (their lessons plus
+      any they're covering); an administrator picks a section. Only the
+      lesson's teacher for the day may take its register, on the day; a past
+      lesson needs approval rights, a future one can't be taken at all.
+      Families are not messaged from here: the daily register already tells
+      them once.
+    - **Cover** (`/academics/substitutions`, new
+      `academics.substitutions` permission for leadership): the day's
+      lessons, with those whose teacher is on approved leave and uncovered
+      at the top. For any lesson — including one whose teacher phoned in sick
+      without filing leave — it ranks every active member of staff: free
+      people first (not teaching then, not already covering, not on leave),
+      subject specialists, then people who know the class, then the lightest
+      day; the unavailable are listed with the reason. Assigning re-checks
+      availability against fresh data under a Postgres advisory lock on
+      (substitute, date), so two coordinators can't give one teacher two
+      overlapping lessons at once. The substitute is notified, and the
+      lesson's register becomes theirs — not the absent teacher's.
+
+    Code in `src/modules/academics/substitution.ts` (pure),
+    `substitutions.service.ts`, `period-attendance.service.ts`.
+
 ## Known limitations / follow-ups
 
 - **Phase 9 is a responsive web portal, not native apps.** There is no React
@@ -594,11 +623,13 @@ before this touches anything real.
   record" and "assign them a subject in a section" are both required before
   a new teacher can do anything — the Staff screen doesn't yet say so.
   Anyone who also holds a broad role (Principal, Admin) is unscoped.
-- **Attendance is daily, not per period.** Period-wise/subject-wise
-  registers (blueprint 11.3) need a `timetableSlotId` on the session and a
-  different uniqueness rule; the daily register was the right first cut.
-  Substitutions / temporary timetable overrides (11.4) and parent
-  notifications on absence (11.3, Phase 6 Connect) are also deferred.
+- **Lesson registers sit beside the daily register, and cover is
+  lesson-by-lesson.** A period register never changes the official daily
+  one, never messages families, and isn't counted in report-card
+  attendance. Cover is arranged one lesson on one day at a time: there's no
+  "cover all of Ravi's lessons this week" in one step, no cover rota, no
+  cap on how many covers one person can be given, and no temporary timetable
+  change beyond a single lesson.
 - **Attendance lock is manual.** The blueprint's "lock after a configured
   time" wants a scheduled job; today someone with `approve` locks the
   register by hand. The data model already carries who locked it and when.

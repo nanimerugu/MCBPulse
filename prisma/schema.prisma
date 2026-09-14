@@ -516,6 +516,7 @@ model Student {
   clinicVisits      ClinicVisit[]
   canteenAccount    CanteenAccount?
   reportCards       ReportCard[]
+  periodMarks       PeriodMark[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -612,6 +613,9 @@ model Staff {
   libraryIssues       LibraryIssue[]
   assignmentsAuthored Assignment[]        @relation("AssignmentAuthor")
   submissionsGraded   Submission[]        @relation("SubmissionGrader")
+  periodRegisters     PeriodRegister[]    @relation("PeriodRegisterTaker")
+  substitutionsAbsent Substitution[]      @relation("SubstitutionAbsent")
+  substitutionsCover  Substitution[]      @relation("SubstitutionCover")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -749,6 +753,9 @@ model TimetableSlot {
   endTime   String
   room      String?
 
+  periodRegisters PeriodRegister[]
+  substitutions   Substitution[]
+
   createdAt DateTime @default(now())
 
   @@index([sectionId, dayOfWeek])
@@ -804,6 +811,76 @@ model AttendanceRecord {
   updatedAt DateTime @updatedAt
 
   @@unique([sessionId, studentId])
+}
+
+/**
+ * One LESSON's register: a timetable slot on a calendar date.
+ *
+ * Deliberately separate from AttendanceSession, which stays the official
+ * DAILY register — the one absence notices, report cards and summaries read.
+ * A period register answers a different question ("was she in third-period
+ * chemistry?"), and a school can take either, both, or neither without one
+ * silently rewriting the other.
+ */
+model PeriodRegister {
+  id     String        @id @default(uuid())
+  slotId String
+  slot   TimetableSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  /** UTC midnight of the calendar date, like AttendanceSession.date. */
+  date   DateTime
+
+  takenByUserId  String
+  takenByStaffId String?
+  takenByStaff   Staff?  @relation("PeriodRegisterTaker", fields: [takenByStaffId], references: [id], onDelete: SetNull)
+
+  marks PeriodMark[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([slotId, date])
+}
+
+model PeriodMark {
+  id         String         @id @default(uuid())
+  registerId String
+  register   PeriodRegister @relation(fields: [registerId], references: [id], onDelete: Cascade)
+  studentId  String
+  student    Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  status  AttendanceStatus
+  remarks String?
+  /** Optimistic lock, same as AttendanceRecord. */
+  version Int              @default(1)
+
+  @@unique([registerId, studentId])
+}
+
+/**
+ * Cover for one lesson on one date: who was due to teach it, and who is
+ * teaching it instead.
+ *
+ * `absentStaffId` is COPIED from the slot when cover is arranged, so the
+ * record still says who was away even if the timetable is later changed.
+ * One cover per lesson per date, enforced by the unique key. Cancelling
+ * deletes the row; the audit log keeps the history.
+ */
+model Substitution {
+  id                String        @id @default(uuid())
+  slotId            String
+  slot              TimetableSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  date              DateTime
+  absentStaffId     String
+  absentStaff       Staff         @relation("SubstitutionAbsent", fields: [absentStaffId], references: [id], onDelete: Cascade)
+  substituteStaffId String
+  substituteStaff   Staff         @relation("SubstitutionCover", fields: [substituteStaffId], references: [id], onDelete: Cascade)
+  reason            String?
+
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  @@unique([slotId, date])
+  @@index([substituteStaffId, date])
 }
 
 enum LeaveRequestStatus {
