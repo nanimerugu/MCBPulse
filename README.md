@@ -484,6 +484,29 @@ before this touches anything real.
     Code in `src/modules/academics/substitution.ts` (pure),
     `substitutions.service.ts`, `period-attendance.service.ts`.
 
+25. **Operations charges — working.** Library fines, hostel fees and
+    transport fees reach the family's invoice (`/finance/ops-billing`).
+    Operations records what happened; Finance decides what it costs.
+    - **Rates are the school's data**: a fine per day late with an optional
+      cap per book (per branch), a monthly fee per hostel block, a monthly
+      fee per route. Leave one blank and nothing is ever charged for it.
+    - **Fines are recorded, not billed.** Returning a student's book late
+      fixes its fine at the rate in force that day. It waits for someone in
+      Finance to charge it to the family or waive it with a reason.
+    - **Monthly hostel and transport billing** raises one invoice per stay
+      per month (prorated by nights) and one per student per priced route
+      per month.
+    - **Nothing can be billed twice.** Every such invoice carries a
+      `sourceKey`, unique per organization, so a double-click, a re-run or
+      two people at once produce one invoice. A fine charged and waived at
+      the same moment ends with exactly one outcome: the losing charge
+      cancels its own invoice.
+    - **Invoice lines say what they're for** ("Nilgiri Block room 201,
+      September 2026 — 17 of 30 days").
+
+    Code in `src/modules/finance/ops-charges.ts` (pure),
+    `ops-billing.service.ts`, `raiseChargeInvoice` in `invoices.service.ts`.
+
 ## Known limitations / follow-ups
 
 - **Phase 9 is a responsive web portal, not native apps.** There is no React
@@ -522,15 +545,15 @@ before this touches anything real.
 - **"Store" is the same table as inventory.** The blueprint names both; the
   schema has one InventoryItem and there is no meaningful difference between
   a stationery store and a stock list, so they were not split.
-- **Library fines are calculated and shown, never charged.** `fineMinor()`
-  gives the amount at a per-day rate, and nothing turns it into an invoice
-  line. Whether a school fines at all, waives for siblings, or blocks a
-  report card over 40 rupees is policy, and guessing it would be worse than
-  leaving the hook visible.
-- **Hostel and transport have no billing, and transport has no attendance.**
-  Allocating a bed or a seat records who is where; it does not raise a fee,
-  and nothing records who actually boarded the bus this morning. GPS, route
-  tracking and a driver app are Phase 9's "driver experience".
+- **Operations charges are deliberately simple.** Fines apply to students'
+  loans only (never staff), and loans returned before a rate was set are
+  never fined retroactively. Transport is billed as a full month per student
+  per priced route because an allocation has no start date; there are no
+  stop-distance tiers, sibling discounts or term-wise billing. General
+  concessions don't apply to these charges.
+- **Transport has no attendance.** Nothing records who actually boarded the
+  bus this morning; GPS, route tracking and a driver app are Phase 9's
+  "driver experience".
 - **Payroll is arithmetic, not a statutory engine — do not file with it.**
   A run carries one deduction percentage plus an optional fixed amount, both
   typed in by whoever opens the run and recorded on it. MCBPulse does **not**

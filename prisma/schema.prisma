@@ -134,6 +134,7 @@ model Branch {
   visitorLogs    VisitorLog[]
   clinicVisits   ClinicVisit[]
   broadcasts     Broadcast[]
+  billingPolicy  BranchBillingPolicy?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -1486,6 +1487,15 @@ model Invoice {
   feeStructureId String?
   feeStructure   FeeStructure? @relation(fields: [feeStructureId], references: [id], onDelete: SetNull)
 
+  /**
+   * What this invoice bills for, when it isn't a fee structure — e.g.
+   * "library-fine:<loan>" or "hostel:<allocation>:2026-09". Unique per
+   * organization, so the same fine or the same month can never be invoiced
+   * twice, however many times someone presses the button. Null for
+   * structure invoices, which have their own idempotency rule.
+   */
+  sourceKey String?
+
   lines    InvoiceLine[]
   payments Payment[]
 
@@ -1493,6 +1503,7 @@ model Invoice {
   updatedAt DateTime @updatedAt
 
   @@unique([organizationId, invoiceNumber])
+  @@unique([organizationId, sourceKey])
   @@index([studentId, status])
 }
 
@@ -1504,6 +1515,8 @@ model InvoiceLine {
   feeHead   FeeHead @relation(fields: [feeHeadId], references: [id], onDelete: Restrict)
 
   amount Decimal @db.Decimal(12, 2)
+  /** What exactly is being charged ("Malgudi Days — 6 days late"), shown under the fee head. */
+  description String?
 }
 
 enum PaymentMethod {
@@ -1785,6 +1798,8 @@ model Route {
   vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
 
   name String
+  /** What a month on this route costs; null means the school doesn't bill it. */
+  monthlyFee Decimal? @db.Decimal(12, 2)
 
   stops             RouteStop[]
   studentTransports StudentTransport[]
@@ -1826,6 +1841,8 @@ model HostelBlock {
   branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   name String
+  /** What a month in this block costs; null means the school doesn't bill it. */
+  monthlyFee Decimal? @db.Decimal(12, 2)
 
   rooms HostelRoom[]
 
@@ -1927,6 +1944,30 @@ model LibraryItem {
   deletedAt DateTime?
 }
 
+enum LibraryFineStatus {
+  PENDING
+  CHARGED
+  WAIVED
+}
+
+/**
+ * A branch's rates for operations charges. Money is policy: a school that
+ * doesn't fine for late books leaves the fine empty, and nothing is ever
+ * charged. Hostel and transport rates live on the block and the route,
+ * because they genuinely differ between them.
+ */
+model BranchBillingPolicy {
+  branchId String @id
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  libraryFinePerDay Decimal? @db.Decimal(12, 2)
+  /** The most one late book can cost, however late. Null = no cap. */
+  libraryFineCap    Decimal? @db.Decimal(12, 2)
+
+  updatedByUserId String?
+  updatedAt       DateTime @updatedAt
+}
+
 model LibraryIssue {
   id            String      @id @default(uuid())
   libraryItemId String
@@ -1943,6 +1984,17 @@ model LibraryIssue {
   returnedAt       DateTime?
   issuedByUserId   String?
   returnedByUserId String?
+
+  /**
+   * A late return's fine, fixed at the moment the book came back, at the
+   * rate then in force. PENDING until someone in Finance charges it to the
+   * family or waives it — the library records a fine, it doesn't bill one.
+   */
+  fineAmount          Decimal?           @db.Decimal(12, 2)
+  fineStatus          LibraryFineStatus?
+  fineInvoiceId       String?
+  fineDecidedByUserId String?
+  fineNote            String?
 
   @@index([libraryItemId, returnedAt])
   @@index([studentId, returnedAt])

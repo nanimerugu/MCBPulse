@@ -1,7 +1,10 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
-import { availableFrom, checkCanBorrow, checkTotalCopiesChange, DEFAULT_LOAN_DAYS, dueDateFrom } from "@/modules/operations/library";
+import { availableFrom, checkCanBorrow, checkTotalCopiesChange, daysOverdue, DEFAULT_LOAN_DAYS, dueDateFrom } from "@/modules/operations/library";
+import { fromMinor } from "@/modules/finance/money";
+import { libraryFine } from "@/modules/finance/ops-charges";
+import { libraryFinePolicy } from "@/modules/finance/ops-billing.service";
 import { SisError, type Actor } from "@/modules/sis/students.service";
 
 export interface OpsScope {
@@ -187,10 +190,18 @@ export async function returnLibraryItem(issueId: string, scope: OpsScope, actor:
   if (issue.returnedAt) throw new SisError("This copy was already returned");
 
   const returnedAt = new Date();
+  // A late fine is fixed now, at the rate in force today: changing the rate
+  // next month must not re-price a book that came back this month. Only a
+  // STUDENT's loan is fined — a staff member's can't go on a family invoice,
+  // and docking pay is not the library's call.
+  const daysLate = daysOverdue({ dueAt: issue.dueAt, returnedAt }, returnedAt);
+  const policy = issue.studentId && daysLate > 0 ? await libraryFinePolicy(scope.branchId) : null;
+  const fineMinor = policy ? libraryFine({ daysOverdue: daysLate, perDayMinor: policy.perDayMinor, capMinor: policy.capMinor }) : 0;
+
   await db.$transaction(async (tx) => {
     const closed = await tx.libraryIssue.updateMany({
       where: { id: issueId, returnedAt: null },
-      data: { returnedAt, returnedByUserId: actor.userId },
+      data: { returnedAt, returnedByUserId: actor.userId, ...(fineMinor > 0 ? { fineAmount: fromMinor(fineMinor), fineStatus: "PENDING" as const } : {}) },
     });
     if (closed.count === 0) throw new SisError("This copy was already returned");
 
@@ -207,6 +218,7 @@ export async function returnLibraryItem(issueId: string, scope: OpsScope, actor:
     action: "library_item.returned",
     resourceType: "library_item",
     resourceId: issue.libraryItemId,
-    after: { issueId, returnedAt: returnedAt.toISOString(), dueAt: issue.dueAt.toISOString().slice(0, 10) },
+    after: { issueId, returnedAt: returnedAt.toISOString(), dueAt: issue.dueAt.toISOString().slice(0, 10), daysLate, fine: fineMinor > 0 ? fromMinor(fineMinor) : null },
   });
+  return { daysLate, fineMinor };
 }

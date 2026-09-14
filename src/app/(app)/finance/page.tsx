@@ -50,6 +50,7 @@ export default async function FinanceIndexPage({
         actions={
           <>
             <LinkButton href={withBranch("/finance/fee-structures", ctx)}>Fee structures</LinkButton>
+            <LinkButton href={withBranch("/finance/ops-billing", ctx)}>Operations charges</LinkButton>
             <LinkButton href={withBranch("/finance/ledger", ctx)}>Ledger</LinkButton>
             <LinkButton href={withBranch("/finance/invoices", ctx)} variant="primary">
               Invoices

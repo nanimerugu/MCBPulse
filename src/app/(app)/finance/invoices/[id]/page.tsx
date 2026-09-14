@@ -15,6 +15,7 @@ import type { InvoiceStatus } from "@/generated/prisma/enums";
 
 const TONES: Record<InvoiceStatus, BadgeTone> = { PENDING: "neutral", PARTIAL: "amber", PAID: "green", OVERDUE: "red", CANCELLED: "neutral" };
 const REFUND_TONES: Record<string, BadgeTone> = { REQUESTED: "amber", APPROVED: "blue", PROCESSED: "green", REJECTED: "neutral" };
+const SOURCE_LABELS: Record<string, string> = { "library-fine": "Library fine", hostel: "Hostel", transport: "Transport" };
 
 export default async function InvoicePage({
   params,
@@ -75,14 +76,20 @@ export default async function InvoicePage({
                 { label: "Total", value: formatMoney(invoice.totalMinor) },
                 { label: "Paid", value: formatMoney(invoice.paidMinor) },
                 { label: "Outstanding", value: <span className="font-semibold">{formatMoney(invoice.outstandingMinor)}</span> },
-                { label: "Structure", value: invoice.feeStructure?.name ?? "ad hoc" },
+                {
+                  label: "For",
+                  value: invoice.feeStructure?.name ?? (invoice.sourceKey ? (SOURCE_LABELS[invoice.sourceKey.split(":")[0] ?? ""] ?? "operations charge") : "ad hoc"),
+                },
               ]}
             />
             <table className="mt-4 w-full text-left text-sm">
               <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                 {invoice.lines.map((l) => (
                   <tr key={l.id}>
-                    <td className="py-1.5 text-zinc-700 dark:text-zinc-200">{l.feeHead.name}</td>
+                    <td className="py-1.5 text-zinc-700 dark:text-zinc-200">
+                      {l.feeHead.name}
+                      {l.description ? <p className="text-xs text-zinc-500 dark:text-zinc-400">{l.description}</p> : null}
+                    </td>
                     <td className="py-1.5 text-right font-mono text-xs">{formatMoney(toMinor(l.amount))}</td>
                   </tr>
                 ))}

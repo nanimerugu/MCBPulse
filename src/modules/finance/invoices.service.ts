@@ -125,6 +125,102 @@ export async function raiseInvoice(studentId: string, feeStructureId: string, du
   throw new SisError("Couldn't allocate an invoice number — please retry");
 }
 
+export interface ChargeLine {
+  feeHeadName: string;
+  amountMinor: number;
+  description: string;
+}
+
+/**
+ * Raise an invoice for something that isn't a fee structure — a library
+ * fine, a month in the hostel, a month on the bus.
+ *
+ * IDEMPOTENT BY `sourceKey`, and the database is what makes it so: the key
+ * is unique per organization, so a double-click, a re-run of the monthly
+ * billing, or two finance staff charging the same fine at once all end with
+ * ONE invoice. A second call returns the first invoice with `created: false`.
+ *
+ * Fee heads are found or created by name: the school sets the RATES; what a
+ * hostel charge is called on an invoice doesn't need a settings screen.
+ * General concessions are not applied — they were granted against tuition
+ * structures, and quietly discounting a library fine with a sibling
+ * concession is not what whoever granted it decided.
+ */
+export async function raiseChargeInvoice(input: { studentId: string; sourceKey: string; dueDateISO: string; lines: ChargeLine[] }, actor: Actor) {
+  const existing = await db.invoice.findUnique({ where: { organizationId_sourceKey: { organizationId: actor.organizationId, sourceKey: input.sourceKey } } });
+  if (existing) return { invoice: existing, created: false };
+
+  const lines = input.lines.filter((l) => l.amountMinor > 0);
+  const totalMinor = lines.reduce((s, l) => s + l.amountMinor, 0);
+  if (totalMinor <= 0) throw new SisError("There is nothing to charge");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.dueDateISO)) throw new SisError("Pick a due date");
+
+  const student = await db.student.findFirst({
+    where: { id: input.studentId, organizationId: actor.organizationId, deletedAt: null },
+    include: { currentSection: { include: { grade: true } } },
+  });
+  if (!student) throw new SisError("Student not found");
+  const year = await db.academicYear.findFirst({ where: { branchId: student.branchId, isCurrent: true, deletedAt: null } });
+  if (!year) throw new SisError("The student's branch has no current academic year to invoice against");
+
+  const heads = new Map<string, string>();
+  for (const name of new Set(lines.map((l) => l.feeHeadName))) {
+    const head = await db.feeHead.upsert({
+      where: { organizationId_name: { organizationId: actor.organizationId, name } },
+      create: { organizationId: actor.organizationId, name },
+      update: { deletedAt: null },
+    });
+    heads.set(name, head.id);
+  }
+
+  const numberYear = new Date().getUTCFullYear();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const count = await db.invoice.count({ where: { organizationId: actor.organizationId, invoiceNumber: { startsWith: `INV-${numberYear}-` } } });
+    const invoiceNumber = formatDocumentNumber("INV", numberYear, count + 1 + attempt);
+    try {
+      const invoice = await db.invoice.create({
+        data: {
+          organizationId: actor.organizationId,
+          studentId: student.id,
+          academicYearId: year.id,
+          invoiceNumber,
+          sourceKey: input.sourceKey,
+          totalAmount: fromMinor(totalMinor),
+          dueDate: new Date(`${input.dueDateISO}T00:00:00.000Z`),
+          status: "PENDING",
+          lines: { create: lines.map((l) => ({ feeHeadId: heads.get(l.feeHeadName)!, amount: fromMinor(l.amountMinor), description: l.description })) },
+        },
+      });
+      await recordAuditEvent({
+        organizationId: actor.organizationId,
+        actorUserId: actor.userId,
+        action: "invoice.raised",
+        resourceType: "invoice",
+        resourceId: invoice.id,
+        after: { invoiceNumber, studentId: student.id, admissionNumber: student.admissionNumber, source: input.sourceKey, total: fromMinor(totalMinor), dueDate: input.dueDateISO },
+      });
+      await emit(
+        "invoice.raised",
+        {
+          "invoice.number": invoiceNumber,
+          "invoice.amount": totalMinor / 100,
+          "student.name": `${student.firstName} ${student.lastName}`,
+          "student.grade": student.currentSection?.grade.name ?? null,
+        },
+        { organizationId: actor.organizationId, studentId: student.id },
+      );
+      return { invoice, created: true };
+    } catch (e) {
+      if (!isUniqueViolation(e)) throw e;
+      // Either the number was taken (try the next) or someone else raised
+      // this very charge a moment ago — in which case theirs is the invoice.
+      const raced = await db.invoice.findUnique({ where: { organizationId_sourceKey: { organizationId: actor.organizationId, sourceKey: input.sourceKey } } });
+      if (raced) return { invoice: raced, created: false };
+    }
+  }
+  throw new SisError("Couldn't allocate an invoice number — please retry");
+}
+
 /** Raise the same structure for every enrolled student in a section. Skips students already invoiced for it. */
 export async function raiseInvoicesForSection(sectionId: string, feeStructureId: string, dueDateISO: string, actor: Actor) {
   const students = await db.student.findMany({

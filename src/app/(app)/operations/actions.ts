@@ -8,6 +8,7 @@ import type { FormState } from "@/modules/sis/form-state";
 import { fieldErrors } from "@/modules/sis/schemas";
 import { SisError } from "@/modules/sis/students.service";
 import { DEFAULT_LOAN_DAYS } from "@/modules/operations/library";
+import { formatMoney } from "@/modules/finance/money";
 import {
   createLibraryItem,
   issueLibraryItem,
@@ -107,14 +108,19 @@ export async function issueLibraryItemAction(itemId: string, _prev: FormState, f
 }
 
 export async function returnLibraryItemAction(issueId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  let outcome: { daysLate: number; fineMinor: number };
   try {
     const access = await requireOpsAccessForAction(str(formData, "branchId"), "ops.library", "edit");
-    await returnLibraryItem(issueId, scopeOf(access), actorOf(access));
+    outcome = await returnLibraryItem(issueId, scopeOf(access), actorOf(access));
   } catch (e) {
     return toFormState(e);
   }
   revalidatePath("/operations/library");
-  return { success: "Copy returned" };
+  revalidatePath("/finance/ops-billing");
+  if (outcome.fineMinor > 0) {
+    return { success: `Returned ${outcome.daysLate} day${outcome.daysLate === 1 ? "" : "s"} late — a fine of ${formatMoney(outcome.fineMinor)} is recorded for Finance to charge or waive` };
+  }
+  return { success: outcome.daysLate > 0 ? `Returned ${outcome.daysLate} day${outcome.daysLate === 1 ? "" : "s"} late — no fine (none is set, or it was a staff loan)` : "Copy returned" };
 }
 
 // --- Inventory ---------------------------------------------------------------
