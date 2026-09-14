@@ -26,16 +26,30 @@ async function loadAssignments(userId: string) {
   });
 }
 
+/**
+ * Returns null for no session AND for a session whose user no longer exists
+ * or is no longer ACTIVE. The JWT cookie is only proof that someone signed
+ * in once; whether they're still allowed in is a database question, asked
+ * here on every request. (Found the hard way: a re-seeded database left a
+ * browser holding a perfectly valid token for a user id that had ceased to
+ * exist — the same shape as a disabled employee keeping access.)
+ */
 export async function getViewerContext(): Promise<ViewerContext | null> {
   const session = await auth();
   if (!session?.user?.id) return null;
 
-  const assignments = await loadAssignments(session.user.id);
+  const user = await db.user.findFirst({
+    where: { id: session.user.id, status: "ACTIVE", deletedAt: null },
+    select: { id: true, email: true, name: true },
+  });
+  if (!user) return null;
+
+  const assignments = await loadAssignments(user.id);
 
   return {
-    userId: session.user.id,
-    email: session.user.email ?? "",
-    name: session.user.name ?? session.user.email ?? "Unknown",
+    userId: user.id,
+    email: user.email,
+    name: user.name,
     assignments,
     organizationId: assignments[0]?.organizationId ?? null,
   };

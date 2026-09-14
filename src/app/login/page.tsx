@@ -1,10 +1,12 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { getViewerContext } from "@/lib/tenant";
 import { LoginForm } from "./login-form";
 
 export default async function LoginPage() {
-  const session = await auth();
-  if (session?.user) redirect("/dashboard");
+  // getViewerContext, not auth(): a cookie for a user who no longer exists
+  // must land here and see the form, not bounce back to the app.
+  const viewer = await getViewerContext();
+  if (viewer) redirect("/dashboard");
 
   return (
     <div className="flex flex-1 items-center justify-center bg-zinc-50 px-4 dark:bg-zinc-950">
@@ -12,7 +14,7 @@ export default async function LoginPage() {
         <div className="mb-6">
           <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">MCBPulse</p>
           <h1 className="mt-1 text-xl font-semibold text-zinc-900 dark:text-zinc-50">Sign in</h1>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">School Operating System — Phase 0</p>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">School Operating System</p>
         </div>
         <LoginForm />
       </div>

@@ -3,10 +3,16 @@
  * are seeded once as organization-independent templates (`Role.organizationId
  * = null`) and then assigned to users per-organization via RoleAssignment.
  *
- * Most roles get no foundation permissions yet — their access is defined by
- * the module that introduces them (Teacher's real permissions arrive with
- * Phase 2 Academics, Accountant's with Phase 4 Finance, etc.). Only the two
- * roles that actually operate the platform today get foundation permissions.
+ * Grants accrue phase by phase: Phase 0 gave the two platform-operating roles
+ * the foundation permissions; Phase 1 (SIS) adds the school-facing roles'
+ * first real permissions. Roles whose modules haven't been built yet
+ * (Accountant → Finance, Librarian → Library, ...) still have empty grants.
+ *
+ * Teacher and Class Teacher can *view* students org-wide here. The
+ * blueprint's "assigned classes only" restriction is the attribute-policy
+ * stage of authorize(), which lands with Phase 2 Academics once there's a
+ * subject-assignment to scope by. Until then this is deliberately permissive
+ * rather than silently broken.
  */
 export interface SystemRoleDef {
   key: string;
@@ -41,24 +47,93 @@ const FOUNDATION_ALL = [
   "feature_flags:configure",
 ];
 
-const ORG_ADMIN_SET = FOUNDATION_ALL.filter(
-  (key) => key !== "platform.organizations:create",
-);
+const SIS_ALL = [
+  "sis.students:view",
+  "sis.students:create",
+  "sis.students:edit",
+  "sis.students:delete",
+  "sis.students:export",
+  "sis.enrollment:edit",
+  "sis.guardians:view",
+  "sis.guardians:create",
+  "sis.guardians:edit",
+  "sis.guardians:delete",
+  "sis.staff:view",
+  "sis.staff:create",
+  "sis.staff:edit",
+  "sis.staff:delete",
+  "academics.structure:view",
+  "academics.structure:configure",
+];
+
+const SIS_READ = [
+  "sis.students:view",
+  "sis.guardians:view",
+  "sis.staff:view",
+  "academics.structure:view",
+];
+
+const ORG_ADMIN_SET = FOUNDATION_ALL.filter((key) => key !== "platform.organizations:create");
 
 export const SYSTEM_ROLES: SystemRoleDef[] = [
-  { key: "platform_admin", name: "Platform Admin", description: "SaaS operations: all tenants, billing, feature flags", permissions: FOUNDATION_ALL },
-  { key: "organization_admin", name: "Organization Admin", description: "Trust/group administration across all branches", permissions: ORG_ADMIN_SET },
-  { key: "principal", name: "Principal", description: "School leadership, cross-module school-wide access", permissions: ["tenant.branches:view", "tenant.academic_years:view", "identity.users:view", "audit.events:view"] },
-  { key: "vice_principal", name: "Vice Principal", description: "Academic and operations oversight", permissions: ["tenant.branches:view", "tenant.academic_years:view"] },
-  { key: "admin_front_office", name: "Admin / Front Office", description: "Daily administration: SIS, admissions, documents, visitors", permissions: [] },
-  { key: "teacher", name: "Teacher", description: "Teaching and assessment for assigned classes/subjects", permissions: [] },
-  { key: "class_teacher", name: "Class Teacher", description: "Class ownership: students and parent communication", permissions: [] },
-  { key: "accountant", name: "Accountant", description: "Fees and finance", permissions: [] },
-  { key: "hr_manager", name: "HR Manager", description: "Employee lifecycle", permissions: [] },
-  { key: "librarian", name: "Librarian", description: "Library operations", permissions: [] },
-  { key: "transport_manager", name: "Transport Manager", description: "Routes and vehicles", permissions: [] },
-  { key: "hostel_warden", name: "Hostel Warden", description: "Hostel administration", permissions: [] },
-  { key: "counselor", name: "Counselor / Admission Agent", description: "Lead conversion, admissions CRM", permissions: [] },
+  {
+    key: "platform_admin",
+    name: "Platform Admin",
+    description: "SaaS operations: all tenants, billing, feature flags",
+    permissions: [...FOUNDATION_ALL, ...SIS_ALL],
+  },
+  {
+    key: "organization_admin",
+    name: "Organization Admin",
+    description: "Trust/group administration across all branches",
+    permissions: [...ORG_ADMIN_SET, ...SIS_ALL],
+  },
+  {
+    key: "principal",
+    name: "Principal",
+    description: "School leadership, cross-module school-wide access",
+    permissions: [
+      "tenant.branches:view",
+      "tenant.academic_years:view",
+      "identity.users:view",
+      "audit.events:view",
+      ...SIS_READ,
+      "sis.students:edit",
+      "sis.students:export",
+      "sis.enrollment:edit",
+      "sis.guardians:edit",
+      "academics.structure:configure",
+    ],
+  },
+  {
+    key: "vice_principal",
+    name: "Vice Principal",
+    description: "Academic and operations oversight",
+    permissions: ["tenant.branches:view", "tenant.academic_years:view", ...SIS_READ, "sis.enrollment:edit"],
+  },
+  {
+    key: "admin_front_office",
+    name: "Admin / Front Office",
+    description: "Daily administration: SIS, admissions, documents, visitors",
+    permissions: [
+      ...SIS_READ,
+      "sis.students:create",
+      "sis.students:edit",
+      "sis.students:export",
+      "sis.enrollment:edit",
+      "sis.guardians:create",
+      "sis.guardians:edit",
+      "sis.guardians:delete",
+    ],
+  },
+  { key: "teacher", name: "Teacher", description: "Teaching and assessment for assigned classes/subjects", permissions: ["sis.students:view", "sis.guardians:view", "academics.structure:view"] },
+  { key: "class_teacher", name: "Class Teacher", description: "Class ownership: students and parent communication", permissions: ["sis.students:view", "sis.guardians:view", "academics.structure:view"] },
+  { key: "accountant", name: "Accountant", description: "Fees and finance", permissions: ["sis.students:view"] },
+  { key: "hr_manager", name: "HR Manager", description: "Employee lifecycle", permissions: ["sis.staff:view", "sis.staff:create", "sis.staff:edit", "sis.staff:delete"] },
+  { key: "librarian", name: "Librarian", description: "Library operations", permissions: ["sis.students:view"] },
+  { key: "transport_manager", name: "Transport Manager", description: "Routes and vehicles", permissions: ["sis.students:view"] },
+  { key: "hostel_warden", name: "Hostel Warden", description: "Hostel administration", permissions: ["sis.students:view"] },
+  { key: "counselor", name: "Counselor / Admission Agent", description: "Lead conversion, admissions CRM", permissions: ["sis.students:view", "sis.students:create", "sis.guardians:view", "sis.guardians:create"] },
   { key: "parent", name: "Parent", description: "Own child/children information and actions", permissions: [] },
   { key: "student", name: "Student", description: "Own learning and profile records", permissions: [] },
   { key: "driver", name: "Driver", description: "Assigned vehicle/route execution", permissions: [] },

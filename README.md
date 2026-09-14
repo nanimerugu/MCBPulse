@@ -8,18 +8,26 @@ full architecture is in
 read section 20 ("Claude Build Strategy") before adding a new module — each
 phase gets its own schema slice and its own pass, not one giant change.
 
-**Two tiers exist today, and it matters which one you're looking at:**
+**Three tiers exist today, and it matters which one you're looking at:**
 
-1. **Phase 0 — working software.** Tenancy, identity, RBAC/ABAC, audit
-   logging, feature flags. Real routes read and write these tables; you can
-   log in and use it.
-2. **Phase 1+ — schema only.** The full canonical data model from blueprint
-   section 8 (People, Academics, Attendance, Admissions, LMS, Assessment,
-   Finance, Accounting, HR, Operations, Communication, Files, AI — 72 tables)
-   exists in `prisma/schema.prisma` and migrates cleanly. **No route,
-   permission, or business logic touches any of it yet.** Each module gets
-   wired up in the phase that builds it. The architecture is laid down; the
-   rooms aren't furnished.
+1. **Phase 0 — working.** Tenancy, identity, RBAC/ABAC, audit logging,
+   feature flags. Real routes read and write these tables; you can log in
+   and use it.
+2. **Phase 1 (SIS) — working.** Students (searchable list, create/edit, a
+   Student 360 profile), guardians with sibling linking, emergency contacts,
+   the enrollment lifecycle state machine (enroll → promote → transfer /
+   withdraw / graduate), bulk CSV import with a validation preview and
+   atomic commit, CSV export, staff creation with a scoped role grant, and
+   grades/sections per academic year. Gated by the `phase1.sis` feature flag
+   and by 16 new RBAC permissions (`sis.*`, `academics.structure`).
+   Code lives in `src/modules/sis/` (services, pure logic, tests) and
+   `src/app/(app)/students|staff|settings/`.
+3. **Phase 2+ — schema only.** The rest of the canonical data model from
+   blueprint section 8 (Attendance, Admissions, LMS, Assessment, Finance,
+   Accounting, HR, Operations, Communication, Files, AI) exists in
+   `prisma/schema.prisma` and migrates cleanly. **No route, permission, or
+   business logic touches any of it yet.** Each module gets wired up in the
+   phase that builds it.
 
 ## Stack
 
@@ -83,7 +91,12 @@ before this touches anything real.
 | Auth (Credentials + JWT, login/logout, failed-login audit) | [`src/lib/auth.ts`](src/lib/auth.ts) |
 | App shell + nav (placeholders for unbuilt phases) | [`src/components/app-shell.tsx`](src/components/app-shell.tsx) |
 | A real page gated by a permission check | [`src/app/(app)/settings/users/page.tsx`](src/app/(app)/settings/users/page.tsx) |
-| **Schema only:** canonical data model for all 13 Phase 1+ domains (72 tables, 29 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
+| SIS access gate: branch → feature flag → `authorize()`, for pages and for server actions (which must name the exact branch they were rendered for) | [`src/modules/sis/access.ts`](src/modules/sis/access.ts), [`src/lib/branch-context.ts`](src/lib/branch-context.ts) |
+| Student lifecycle state machine (pure, tested) | [`src/modules/sis/lifecycle.ts`](src/modules/sis/lifecycle.ts) |
+| CSV import: RFC 4180 parser, header-alias mapping, row-level validation with duplicate detection (pure, tested); preview + atomic commit that re-validates against fresh DB state | [`src/modules/sis/csv.ts`](src/modules/sis/csv.ts), [`import-validation.ts`](src/modules/sis/import-validation.ts), [`import.service.ts`](src/modules/sis/import.service.ts) |
+| Students / guardians / staff / academic-structure services (tenant-pinned, every mutation audited) | [`src/modules/sis/*.service.ts`](src/modules/sis/) |
+| Student 360 profile with lifecycle actions, sibling-aware guardian linking, and an audit timeline | [`src/app/(app)/students/[id]/page.tsx`](src/app/(app)/students/[id]/page.tsx) |
+| **Schema only:** canonical data model for the Phase 2+ domains (part of 72 tables / 29 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
 
 ## Known limitations / follow-ups
 
@@ -98,10 +111,33 @@ before this touches anything real.
   did *not* emit that DROP — live-DB introspection skips indexes it can't
   represent — but `migrate dev`'s shadow-replay path may still differ, so
   the check stands.)
-- **Phase 1+ tables have no RBAC permissions yet.** `src/lib/permissions.ts`
-  only lists foundation modules. Adding a module's permissions belongs with
-  the code that first checks them — an inert permission row nothing gates is
-  just noise in the catalog.
+- **Phase 2+ tables have no RBAC permissions yet.** `src/lib/permissions.ts`
+  lists foundation and SIS modules only. Adding a module's permissions
+  belongs with the code that first checks them — an inert permission row
+  nothing gates is just noise in the catalog.
+- **Teachers can view every student in the organization.** The blueprint's
+  "assigned classes only" rule is the attribute-policy stage of
+  `authorize()`, which needs a subject/class assignment to scope by — that
+  arrives with Phase 2 Academics. Until then Teacher/Class Teacher grants
+  are deliberately permissive rather than silently broken.
+- **No custom fields or student documents yet.** Custom fields need the
+  shared Dynamic Forms engine (blueprint 11.9); documents need the Files
+  storage adapter (Phase 8/Files). The `Student.photoFileId` and
+  `FileAsset` tables exist but nothing writes them.
+- **Staff logins can't be invited by email.** Connect (Phase 6) owns email.
+  Interim: the staff form lets an admin set an initial password; leaving it
+  blank creates the login in INVITED state with no way to sign in yet.
+- **Promotion is a section move, not a year-end batch.** Moving a whole
+  class to next year's sections in one action (blueprint 10.2 "at year end:
+  promote, retain, transfer or graduate") is a follow-up; today each student
+  is promoted from their profile, and the prior section survives only in the
+  audit timeline — a `StudentSectionHistory` table is the right fix when
+  report cards need it.
+- **Sessions are validated against the database on every request.**
+  `getViewerContext()` refuses a JWT whose user no longer exists or isn't
+  ACTIVE. Found when a re-seeded dev database left a browser holding a valid
+  token for a vanished user id — the same shape as a disabled employee
+  keeping access.
 - **Some cross-table invariants are application-level, not schema-level.**
   Called out inline in `schema.prisma`: `LeaveRequest` must have exactly one
   of `studentId`/`staffId`; a `JournalEntry`'s lines must balance; a

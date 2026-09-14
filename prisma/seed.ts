@@ -75,10 +75,7 @@ async function main() {
 
   const now = new Date();
   const yearName = `${now.getFullYear()}-${now.getFullYear() + 1}`;
-  // Not referenced further below — Org Admin's demo assignment is org-wide
-  // (see the comment near its upsert) — but the row itself still needs to
-  // exist so the tenant hierarchy has a current academic year to show.
-  await db.academicYear.upsert({
+  const academicYear = await db.academicYear.upsert({
     where: { branchId_name: { branchId: branch.id, name: yearName } },
     create: {
       branchId: branch.id,
@@ -143,11 +140,80 @@ async function main() {
     update: { branchId: null, academicYearId: null },
   });
 
+  console.log("Seeding demo academic structure...");
+  const sectionIds = new Map<string, string>(); // "Grade 5|A" -> id
+  for (const [name, sequence] of [["Grade 1", 1], ["Grade 2", 2], ["Grade 3", 3], ["Grade 4", 4], ["Grade 5", 5]] as const) {
+    const grade = await db.grade.upsert({
+      where: { branchId_name: { branchId: branch.id, name } },
+      create: { branchId: branch.id, name, sequence },
+      update: { sequence },
+    });
+    for (const sectionName of ["A", "B"]) {
+      const section = await db.section.upsert({
+        where: { gradeId_academicYearId_name: { gradeId: grade.id, academicYearId: academicYear.id, name: sectionName } },
+        create: { gradeId: grade.id, academicYearId: academicYear.id, name: sectionName, capacity: 30 },
+        update: {},
+      });
+      sectionIds.set(`${name}|${sectionName}`, section.id);
+    }
+  }
+
+  console.log("Seeding demo students...");
+  // Guardians are people shared across siblings — Priya and Rohan Rao share
+  // one father record, which is the sibling model the blueprint asks for.
+  const demoStudents: {
+    admissionNumber: string;
+    firstName: string;
+    lastName: string;
+    dob: string;
+    gender: string;
+    section: string | null;
+    guardian: { firstName: string; lastName: string; phone: string; relationship: "FATHER" | "MOTHER" | "GUARDIAN" | "OTHER" } | null;
+  }[] = [
+    { admissionNumber: "N-1001", firstName: "Priya", lastName: "Rao", dob: "2015-06-12", gender: "F", section: "Grade 5|A", guardian: { firstName: "Anil", lastName: "Rao", phone: "9000000001", relationship: "FATHER" } },
+    { admissionNumber: "N-1002", firstName: "Rohan", lastName: "Rao", dob: "2017-09-03", gender: "M", section: "Grade 3|B", guardian: { firstName: "Anil", lastName: "Rao", phone: "9000000001", relationship: "FATHER" } },
+    { admissionNumber: "N-1003", firstName: "Meera", lastName: "Iyer", dob: "2015-01-28", gender: "F", section: "Grade 5|A", guardian: { firstName: "Lakshmi", lastName: "Iyer", phone: "9000000002", relationship: "MOTHER" } },
+    { admissionNumber: "N-1004", firstName: "Arjun", lastName: "Reddy", dob: "2016-11-15", gender: "M", section: "Grade 4|A", guardian: null },
+    { admissionNumber: "N-1005", firstName: "Sara", lastName: "Khan", dob: "2019-04-20", gender: "F", section: null, guardian: { firstName: "Imran", lastName: "Khan", phone: "9000000003", relationship: "FATHER" } },
+    { admissionNumber: "N-1006", firstName: "Dev", lastName: "Patel", dob: "2019-08-08", gender: "M", section: "Grade 1|A", guardian: { firstName: "Nisha", lastName: "Patel", phone: "9000000004", relationship: "MOTHER" } },
+  ];
+  for (const s of demoStudents) {
+    const sectionId = s.section ? sectionIds.get(s.section)! : null;
+    const student = await db.student.upsert({
+      where: { organizationId_admissionNumber: { organizationId: org.id, admissionNumber: s.admissionNumber } },
+      create: {
+        organizationId: org.id,
+        branchId: branch.id,
+        admissionNumber: s.admissionNumber,
+        firstName: s.firstName,
+        lastName: s.lastName,
+        dateOfBirth: new Date(`${s.dob}T00:00:00.000Z`),
+        gender: s.gender,
+        status: sectionId ? "ENROLLED" : "ENQUIRY",
+        currentSectionId: sectionId,
+        admissionDate: sectionId ? new Date(`${now.getFullYear()}-04-01T00:00:00.000Z`) : null,
+      },
+      update: {},
+    });
+    if (s.guardian) {
+      const guardian =
+        (await db.guardian.findFirst({ where: { phone: s.guardian.phone, deletedAt: null } })) ??
+        (await db.guardian.create({ data: { firstName: s.guardian.firstName, lastName: s.guardian.lastName, phone: s.guardian.phone } }));
+      await db.studentGuardian.upsert({
+        where: { studentId_guardianId: { studentId: student.id, guardianId: guardian.id } },
+        create: { studentId: student.id, guardianId: guardian.id, relationship: s.guardian.relationship, isPrimary: true },
+        update: {},
+      });
+    }
+  }
+
   console.log("Seeding feature flags...");
+  // Phase 1 shipped, so SIS defaults on. An organization can still switch it
+  // off with a FeatureFlagOverride — that's what the flag is for.
   await db.featureFlag.upsert({
     where: { key: "phase1.sis" },
-    create: { key: "phase1.sis", description: "Student Information System module (Phase 1)", defaultEnabled: false },
-    update: {},
+    create: { key: "phase1.sis", description: "Student Information System module (Phase 1)", defaultEnabled: true },
+    update: { defaultEnabled: true },
   });
   await db.featureFlag.upsert({
     where: { key: "ai.copilot" },

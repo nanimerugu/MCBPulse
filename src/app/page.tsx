@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { getViewerContext } from "@/lib/tenant";
 
 export default async function Home() {
-  const session = await auth();
-  redirect(session?.user ? "/dashboard" : "/login");
+  const viewer = await getViewerContext();
+  redirect(viewer ? "/dashboard" : "/login");
 }

@@ -61,6 +61,31 @@ export const PERMISSIONS: PermissionDef[] = [
 
   { module: "feature_flags", action: "view", description: "View feature flag state" },
   { module: "feature_flags", action: "configure", description: "Override a feature flag for an organization" },
+
+  // --- Phase 1: SIS ---------------------------------------------------------
+  { module: "sis.students", action: "view", description: "View student records and the Student 360 profile" },
+  { module: "sis.students", action: "create", description: "Create student records, including bulk CSV import" },
+  { module: "sis.students", action: "edit", description: "Edit student profile details" },
+  { module: "sis.students", action: "delete", description: "Archive (soft-delete) a student record" },
+  { module: "sis.students", action: "export", description: "Export student data as CSV" },
+
+  // One permission covers every lifecycle transition (enroll, promote,
+  // transfer, withdraw, graduate). Splitting them per-verb would only matter
+  // once an approval workflow exists — that's the section-12 engine's job.
+  { module: "sis.enrollment", action: "edit", description: "Change a student's enrollment: enroll, promote, transfer, withdraw, graduate" },
+
+  { module: "sis.guardians", action: "view", description: "View guardians and their links to students" },
+  { module: "sis.guardians", action: "create", description: "Create a guardian and link them to a student" },
+  { module: "sis.guardians", action: "edit", description: "Edit a guardian or a guardian link" },
+  { module: "sis.guardians", action: "delete", description: "Unlink a guardian from a student" },
+
+  { module: "sis.staff", action: "view", description: "View staff records" },
+  { module: "sis.staff", action: "create", description: "Create a staff record and its login" },
+  { module: "sis.staff", action: "edit", description: "Edit a staff record" },
+  { module: "sis.staff", action: "delete", description: "Mark a staff member as exited" },
+
+  { module: "academics.structure", action: "view", description: "View grades and sections" },
+  { module: "academics.structure", action: "configure", description: "Create and edit grades and sections" },
 ];
 
 export function permissionKey(module: string, action: Action): string {

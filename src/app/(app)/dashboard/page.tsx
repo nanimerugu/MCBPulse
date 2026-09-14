@@ -13,8 +13,8 @@ export default async function DashboardPage() {
       <div>
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Welcome, {viewer.name}</h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Phase 0 foundation: tenancy, identity, RBAC, audit and feature flags are live. Every other module in the
-          nav is a placeholder for the phase that builds it.
+          Phase 0 (tenancy, identity, RBAC, audit, feature flags) and Phase 1 (students, guardians, staff, academic
+          structure) are live. Everything else in the nav is a placeholder for the phase that builds it.
         </p>
       </div>
 

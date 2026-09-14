@@ -435,6 +435,17 @@ model Student {
   admissionDate   DateTime?
   photoFileId     String?
 
+  // Contact + medical (blueprint 11.1: "addresses; medical/emergency info").
+  // Inlined rather than a polymorphic Address table: one address per student
+  // is the real-world shape, and Prisma has no clean polymorphic relation.
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  bloodGroup   String?
+  medicalNotes String?
+
   currentSectionId String?
   currentSection   Section? @relation(fields: [currentSectionId], references: [id], onDelete: SetNull)
 
