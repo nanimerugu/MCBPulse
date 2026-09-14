@@ -600,6 +600,66 @@ async function main() {
     });
   }
 
+  // Put a couple of students on the seeded route so the driver's manifest
+  // and the parents' transport card have something real in them.
+  const firstStop = await db.routeStop.findFirst({ where: { routeId: northLoop.id, sequence: 1 } });
+  if (firstStop) {
+    for (const firstName of ["Priya", "Rohan"]) {
+      const s = await db.student.findFirst({ where: { organizationId: org.id, firstName, deletedAt: null } });
+      if (!s) continue;
+      await db.studentTransport.upsert({
+        where: { studentId: s.id },
+        create: { studentId: s.id, routeId: northLoop.id, stopId: firstStop.id },
+        update: {},
+      });
+    }
+  }
+
+  console.log("Seeding demo portal logins...");
+  // A parent (Anil Rao, who has TWO children so the child switcher has
+  // something to switch), a student (Meera Iyer) and a driver (Ravi Kumar,
+  // who already drives the seeded bus).
+  const parentRole = await getSystemRole("parent");
+  const studentRole = await getSystemRole("student");
+  const driverRole = await getSystemRole("driver");
+  const portalPassword = await bcrypt.hash("ChangeMe!123", 12);
+
+  const assignRole = async (userId: string, roleId: string) => {
+    const id = `${userId}:${roleId}:${org.id}:portal`;
+    await db.roleAssignment.upsert({
+      where: { id },
+      create: { id, userId, roleId, organizationId: org.id, branchId: null },
+      update: { revokedAt: null },
+    });
+  };
+
+  const anilRao = await db.guardian.findFirst({ where: { phone: "9000000001", deletedAt: null } });
+  if (anilRao) {
+    const parentUser = await db.user.upsert({
+      where: { email: "parent@nalanda-demo.local" },
+      create: { email: "parent@nalanda-demo.local", name: "Anil Rao", passwordHash: portalPassword, status: "ACTIVE" },
+      update: {},
+    });
+    await db.guardian.update({ where: { id: anilRao.id }, data: { userId: parentUser.id } });
+    await assignRole(parentUser.id, parentRole.id);
+  }
+
+  const meera = await db.student.findFirst({ where: { organizationId: org.id, firstName: "Meera", deletedAt: null } });
+  if (meera) {
+    const studentUser = await db.user.upsert({
+      where: { email: "student@nalanda-demo.local" },
+      create: { email: "student@nalanda-demo.local", name: "Meera Iyer", passwordHash: portalPassword, status: "ACTIVE" },
+      update: {},
+    });
+    await db.student.update({ where: { id: meera.id }, data: { userId: studentUser.id } });
+    await assignRole(studentUser.id, studentRole.id);
+  }
+
+  // The driver role goes to the teacher who drives the bus: one user, two
+  // roles. Because one of them is NOT self-scoped, this account still lands
+  // in the staff app — which is the behaviour landingPathFor documents.
+  await assignRole(teacherUser.id, driverRole.id);
+
   console.log("Seeding feature flags...");
   // Phase 1 shipped, so SIS defaults on. An organization can still switch it
   // off with a FeatureFlagOverride — that's what the flag is for.
@@ -644,6 +704,11 @@ async function main() {
     update: { defaultEnabled: true },
   });
   await db.featureFlag.upsert({
+    where: { key: "phase9.portal" },
+    create: { key: "phase9.portal", description: "Family portal: parent, student and driver views on their own records (Phase 9)", defaultEnabled: true },
+    update: { defaultEnabled: true },
+  });
+  await db.featureFlag.upsert({
     where: { key: "ai.copilot" },
     create: { key: "ai.copilot", description: "AI Gateway / school copilot (Phase 10)", defaultEnabled: false },
     update: {},
@@ -653,7 +718,9 @@ async function main() {
   console.log("Demo logins (change these passwords before any real use):");
   console.log("  platform-admin@mcbpulse.local / ChangeMe!123  (Platform Admin)");
   console.log("  admin@nalanda-demo.local / ChangeMe!123        (Organization Admin, Nalanda Demo School Group)");
-  console.log("  teacher@nalanda-demo.local / ChangeMe!123      (Teacher, Nalanda Main Campus — Grade 5 A and Grade 3 B only)");
+  console.log("  teacher@nalanda-demo.local / ChangeMe!123      (Teacher + Driver, Nalanda Main Campus — Grade 5 A and Grade 3 B only)");
+  console.log("  parent@nalanda-demo.local / ChangeMe!123       (Parent — portal only, two children)");
+  console.log("  student@nalanda-demo.local / ChangeMe!123      (Student — portal only, own records)");
 }
 
 main()

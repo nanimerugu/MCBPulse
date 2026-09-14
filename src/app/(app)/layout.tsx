@@ -3,11 +3,18 @@ import { getViewerContext } from "@/lib/tenant";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { heldPermissionKeys } from "@/lib/rbac";
 import { AppShell, NAV_FLAGS } from "@/components/app-shell";
+import { landingPathFor } from "@/modules/portal/landing";
 import { Providers } from "@/components/providers";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const viewer = await getViewerContext();
   if (!viewer) redirect("/login");
+
+  // A parent or student who reaches any staff route — by bookmark, by typing
+  // it, or by following an old link — is sent to the portal rather than shown
+  // a shell of modules that all refuse them. Done here rather than in the
+  // login action so every entry path is covered, not just the form.
+  if ((await landingPathFor(viewer.userId)) === "/portal") redirect("/portal");
 
   const organizationName = viewer.assignments[0]?.organization.name ?? null;
 

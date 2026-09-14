@@ -70,7 +70,35 @@ export function AppShell({
 }) {
   return (
     <div className="flex min-h-screen flex-1">
-      <aside className="flex w-60 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950">
+      {/*
+        The sidebar is a drawer below `sm` and a fixed column above it. It is
+        a <details> rather than client state on purpose: the shell is a server
+        component, and a disclosure element gives a working menu with no
+        hydration, no JavaScript and correct keyboard behaviour for free.
+      */}
+      <details className="group fixed inset-x-0 top-0 z-20 border-b border-zinc-200 bg-zinc-50 sm:hidden dark:border-zinc-800 dark:bg-zinc-950">
+        <summary className="flex h-14 cursor-pointer list-none items-center justify-between px-4 [&::-webkit-details-marker]:hidden">
+          <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">MCBPulse</span>
+          <span className="text-xs font-medium uppercase tracking-wide text-zinc-500 group-open:hidden">Menu</span>
+          <span className="hidden text-xs font-medium uppercase tracking-wide text-zinc-500 group-open:inline">Close</span>
+        </summary>
+        <nav className="flex flex-col gap-0.5 border-t border-zinc-200 p-2 dark:border-zinc-800">
+          {NAV_SECTIONS.map((item) => {
+            const flagOn = !item.flag || enabledFlags.has(item.flag);
+            if (!item.href || !flagOn || !permits(item, permissions)) return null;
+            return (
+              <Link key={item.label} href={item.href} className="rounded-md px-3 py-2.5 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                {item.label}
+              </Link>
+            );
+          })}
+          <Link href="/settings" className="rounded-md px-3 py-2.5 text-sm font-medium text-zinc-700 dark:text-zinc-200">
+            Settings
+          </Link>
+        </nav>
+      </details>
+
+      <aside className="hidden w-60 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50 sm:flex dark:border-zinc-800 dark:bg-zinc-950">
         <div className="border-b border-zinc-200 px-4 py-4 dark:border-zinc-800">
           <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">MCBPulse</p>
           <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">{organizationName ?? "No organization"}</p>
@@ -121,11 +149,12 @@ export function AppShell({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-end gap-4 border-b border-zinc-200 px-6 dark:border-zinc-800">
-          <span className="text-sm text-zinc-600 dark:text-zinc-300">{userName}</span>
+        {/* pt-14 on small screens clears the fixed drawer header above. */}
+        <header className="mt-14 flex h-14 shrink-0 items-center justify-end gap-4 border-b border-zinc-200 px-4 sm:mt-0 sm:px-6 dark:border-zinc-800">
+          <span className="truncate text-sm text-zinc-600 dark:text-zinc-300">{userName}</span>
           <SignOutButton />
         </header>
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
       </div>
     </div>
   );

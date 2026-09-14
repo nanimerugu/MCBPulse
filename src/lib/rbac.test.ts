@@ -78,12 +78,12 @@ describe("resolveAccess (attribute policy: section scoping)", () => {
 
   it("is section-scoped when the only granting role is a teacher", async () => {
     findMany.mockResolvedValueOnce([assignment({ branchId: "branch-a", roleKey: "teacher", permissionKeys: view })]);
-    expect(await resolveAccess("u1", "sis.students", "view", scope)).toEqual({ allowed: true, sectionScoped: true });
+    expect(await resolveAccess("u1", "sis.students", "view", scope)).toEqual({ allowed: true, sectionScoped: true, selfScoped: false });
   });
 
   it("is section-scoped for a class teacher too", async () => {
     findMany.mockResolvedValueOnce([assignment({ branchId: "branch-a", roleKey: "class_teacher", permissionKeys: view })]);
-    expect(await resolveAccess("u1", "sis.students", "view", scope)).toEqual({ allowed: true, sectionScoped: true });
+    expect(await resolveAccess("u1", "sis.students", "view", scope)).toEqual({ allowed: true, sectionScoped: true, selfScoped: false });
   });
 
   it("is NOT section-scoped when any granting role is broad — a principal who also teaches", async () => {
@@ -91,7 +91,7 @@ describe("resolveAccess (attribute policy: section scoping)", () => {
       assignment({ branchId: "branch-a", roleKey: "teacher", permissionKeys: view }),
       assignment({ branchId: null, roleKey: "principal", permissionKeys: view }),
     ]);
-    expect(await resolveAccess("u1", "sis.students", "view", scope)).toEqual({ allowed: true, sectionScoped: false });
+    expect(await resolveAccess("u1", "sis.students", "view", scope)).toEqual({ allowed: true, sectionScoped: false, selfScoped: false });
   });
 
   it("ignores a broad role that doesn't actually grant the permission", async () => {
@@ -100,11 +100,11 @@ describe("resolveAccess (attribute policy: section scoping)", () => {
       assignment({ branchId: null, roleKey: "accountant", permissionKeys: ["finance.invoices:view"] }),
     ]);
     // Only the teacher grants sis.students:view, so the grant is scoped.
-    expect(await resolveAccess("u1", "sis.students", "view", scope)).toEqual({ allowed: true, sectionScoped: true });
+    expect(await resolveAccess("u1", "sis.students", "view", scope)).toEqual({ allowed: true, sectionScoped: true, selfScoped: false });
   });
 
   it("reports sectionScoped=false when denied", async () => {
     findMany.mockResolvedValueOnce([assignment({ branchId: "branch-a", roleKey: "teacher", permissionKeys: ["audit.events:view"] })]);
-    expect(await resolveAccess("u1", "sis.students", "view", scope)).toEqual({ allowed: false, sectionScoped: false });
+    expect(await resolveAccess("u1", "sis.students", "view", scope)).toEqual({ allowed: false, sectionScoped: false, selfScoped: false });
   });
 });

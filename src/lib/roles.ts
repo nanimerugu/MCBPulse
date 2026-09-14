@@ -5,7 +5,7 @@
  *
  * Grants accrue phase by phase: Phase 0 (foundation), Phase 1 (SIS), Phase 2
  * (Academics), Phase 3 (Admissions), Phase 4 (Finance), Phase 5 (LMS),
- * Phase 6 (Connect), Phase 7 (HR), Phase 8 (Operations). Roles whose modules haven't been built yet (Librarian,
+ * Phase 6 (Connect), Phase 7 (HR), Phase 8 (Operations), Phase 9 (portal). Roles whose modules haven't been built yet (Librarian,
  * Transport Manager, ...) still have view-only or empty grants.
  *
  * Teacher and Class Teacher are SECTION-SCOPED roles (see
@@ -346,9 +346,32 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     description: "Lead conversion, admissions CRM",
     permissions: ["sis.students:view", "sis.students:create", "sis.guardians:view", "sis.guardians:create", "academics.structure:view", ...ADMISSIONS_COUNSELOR],
   },
-  { key: "parent", name: "Parent", description: "Own child/children information and actions", permissions: [] },
-  { key: "student", name: "Student", description: "Own learning and profile records", permissions: [] },
-  { key: "driver", name: "Driver", description: "Assigned vehicle/route execution", permissions: [] },
+  {
+    key: "parent",
+    name: "Parent",
+    description: "Own child/children information and actions",
+    // SELF-SCOPED (see SELF_SCOPED_ROLE_KEYS in rbac.ts). These are the same
+    // permission keys staff hold, narrowed to this parent's own children by
+    // the attribute policy. The staff gate REFUSES a self-scoped decision, so
+    // these never open a staff screen — they only feed /portal.
+    permissions: ["sis.students:view", "academics.attendance:view", "academics.timetable:view", "finance.invoices:view", "lms.assignments:view", "lms.grades:view", "ops.infirmary:view", "ops.transport:view"],
+  },
+  {
+    key: "student",
+    name: "Student",
+    description: "Own learning and profile records",
+    // Self-scoped to their own record. No finance: a child does not need to
+    // see what their family owes.
+    permissions: ["sis.students:view", "academics.attendance:view", "academics.timetable:view", "lms.assignments:view", "lms.grades:view"],
+  },
+  {
+    key: "driver",
+    name: "Driver",
+    description: "Assigned vehicle/route execution",
+    // Self-scoped to the students on the vehicle they drive. A manifest is a
+    // list of names and stops, so ops.transport:view is the whole grant.
+    permissions: ["ops.transport:view"],
+  },
   { key: "visitor_security", name: "Visitor / Security", description: "Campus entry, visitor module", permissions: ["sis.students:view", ...OPS_VISITORS] },
   { key: "alumni", name: "Alumni", description: "Alumni portal, own profile/community", permissions: [] },
 ];

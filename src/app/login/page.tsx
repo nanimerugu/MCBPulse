@@ -1,12 +1,13 @@
 import { redirect } from "next/navigation";
 import { getViewerContext } from "@/lib/tenant";
+import { landingPathFor } from "@/modules/portal/landing";
 import { LoginForm } from "./login-form";
 
 export default async function LoginPage() {
   // getViewerContext, not auth(): a cookie for a user who no longer exists
   // must land here and see the form, not bounce back to the app.
   const viewer = await getViewerContext();
-  if (viewer) redirect("/dashboard");
+  if (viewer) redirect(await landingPathFor(viewer.userId));
 
   return (
     <div className="flex flex-1 items-center justify-center bg-zinc-50 px-4 dark:bg-zinc-950">

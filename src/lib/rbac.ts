@@ -25,10 +25,30 @@ export class ForbiddenError extends Error {
  */
 export const SECTION_SCOPED_ROLE_KEYS: ReadonlySet<string> = new Set(["teacher", "class_teacher"]);
 
+/**
+ * Roles that only ever reach their holder's OWN records: a parent sees their
+ * children, a student sees themselves, a driver sees the students on the
+ * vehicle they drive. Same mechanism as section scoping and the same rule —
+ * when EVERY granting role is self-scoped the decision comes back
+ * `selfScoped: true` and the module must narrow by
+ * `getSelfScope()` (src/modules/portal/scope.ts).
+ *
+ * This is the piece that was missing while Phases 5, 7 and 8 kept deferring
+ * "own records only". Note what it means for a permission like
+ * `sis.students:view`: a Parent holding it is NOT holding the staff-wide
+ * grant, because the scope narrows it to their own children. Granting a
+ * self-scoped role a permission without the module honouring the scope would
+ * hand every parent the whole student roster, so a module that cannot filter
+ * must refuse a self-scoped decision outright rather than serve it broadly.
+ */
+export const SELF_SCOPED_ROLE_KEYS: ReadonlySet<string> = new Set(["parent", "student", "driver"]);
+
 export interface AccessDecision {
   allowed: boolean;
   /** True only when allowed AND every granting role is section-scoped. */
   sectionScoped: boolean;
+  /** True only when allowed AND every granting role is self-scoped. */
+  selfScoped: boolean;
 }
 
 /**
@@ -80,10 +100,11 @@ export async function resolveAccess(
     return assignment.role.rolePermissions.some((rp) => rp.permission.key === key);
   });
 
-  if (granting.length === 0) return { allowed: false, sectionScoped: false };
+  if (granting.length === 0) return { allowed: false, sectionScoped: false, selfScoped: false };
   return {
     allowed: true,
     sectionScoped: granting.every((a) => SECTION_SCOPED_ROLE_KEYS.has(a.role.key)),
+    selfScoped: granting.every((a) => SELF_SCOPED_ROLE_KEYS.has(a.role.key)),
   };
 }
 

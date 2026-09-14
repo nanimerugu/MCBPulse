@@ -106,7 +106,20 @@ phase gets its own schema slice and its own pass, not one giant change.
    read-then-write. Gated by `phase8.operations` and 17 `ops.*` permissions.
    **Canteen and "store" are not built** — see below. Code in
    `src/modules/operations/` and `src/app/(app)/operations/`.
-10. **Phase 9+ — schema only.** Examcell (question banks, papers, online
+10. **Phase 9 (portal) — working. Responsive web, not native apps.** The
+    blueprint calls this phase "Mobile"; this is a Next.js application with
+    no React Native, so what ships is the **parent, student and driver
+    experiences delivered as a mobile-first web portal** at `/portal`, plus a
+    staff shell that finally works on a phone. Nobody should read this as
+    shipped app-store apps.
+    Its foundation is the **"own records only" attribute policy** that Phases
+    5, 7 and 8 each deferred: `SELF_SCOPED_ROLE_KEYS` in
+    [`src/lib/rbac.ts`](src/lib/rbac.ts) makes a decision come back
+    `selfScoped`, the staff gate **refuses** such a decision outright, and
+    [`src/modules/portal/scope.ts`](src/modules/portal/scope.ts) turns the
+    viewer's identity into the exact set of student ids they may see —
+    before any query runs, so it fails closed. Gated by `phase9.portal`.
+11. **Phase 10+ — schema only.** Examcell (question banks, papers, online
     exam attempts) and the rest of blueprint section 8 (Files, AI) exist in
     `prisma/schema.prisma` and migrate cleanly. **No route or business logic
     touches any of it yet.**
@@ -219,10 +232,26 @@ before this touches anything real.
 | Loan rules: derived overdue, fines computed but never charged, per-borrower limits (pure, tested) | [`src/modules/operations/library.ts`](src/modules/operations/library.ts) |
 | Stock movement ledger, so a quantity always has a reason behind it (pure, tested) | [`src/modules/operations/stock.ts`](src/modules/operations/stock.ts) |
 | Urgent guardian notice that overrides quiet hours, and says plainly when it reached nobody (pure, tested) | [`delivery-policy.ts`](src/modules/connect/delivery-policy.ts), [`notify.ts`](src/modules/connect/notify.ts) |
-| **Schema only:** canonical data model for the Phase 9+ domains (part of 75 tables / 32 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
+| "Own records only" attribute policy: self-scoped roles reported by `resolveAccess` (tested), refused by the staff gate, resolved to an id list by the portal | [`src/lib/rbac.ts`](src/lib/rbac.ts), [`src/modules/portal/scope.ts`](src/modules/portal/scope.ts) |
+| Portal reads that reuse Finance's own definition of "paid" rather than a second one | [`src/modules/portal/portal.service.ts`](src/modules/portal/portal.service.ts) |
+| Landing route chosen from the roles held, so a parent never lands on a staff shell that refuses them | [`src/modules/portal/landing.ts`](src/modules/portal/landing.ts) |
+| Mobile-first portal shell, and a staff sidebar that becomes a drawer below `sm` with no client JS | [`src/app/portal/layout.tsx`](src/app/portal/layout.tsx), [`src/components/app-shell.tsx`](src/components/app-shell.tsx) |
+| **Schema only:** canonical data model for the Phase 10+ domains (part of 75 tables / 32 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
 
 ## Known limitations / follow-ups
 
+- **Phase 9 is a responsive web portal, not native apps.** There is no React
+  Native, no app store build, no push notification and no offline mode. The
+  blueprint's "driver experience" here is a read-only manifest — there is no
+  GPS, no live tracking and no boarding scan.
+- **The portal is read-only.** A parent can see dues but cannot pay (no
+  gateway), a student can see work but cannot submit it, and nobody can
+  update their own contact details. Every write still goes through the
+  school office.
+- **Portal logins are created by the seed, not by the product.** There is no
+  invite flow, no email verification, no self-service password reset and no
+  OTP. `Guardian.userId` and `Student.userId` are set directly; a real
+  deployment needs an onboarding path before any of this reaches a family.
 - **Canteen is not built, and "store" is the same table as inventory.** The
   blueprint's Phase 8 names eight sub-modules; the schema carries a
   `CanteenItem` with a name and a price and nothing else — no wallet, no
@@ -252,13 +281,14 @@ before this touches anything real.
   on the run as context (an "N days" column) and changes nothing. Loss-of-pay
   rules, leave balances and leave types are a policy layer that isn't built;
   a school needing them must adjust the pay figure by hand before generating.
-- **Staff can't file their own leave.** `hr.leave` is an unscoped permission,
-  so granting it to a teacher would let them read every colleague's leave
-  history and file leave in someone else's name. Self-service needs an
-  attribute policy scoping `hr.leave` to the requester's own staff record —
-  the same missing "own records only" scope the student/parent portal needs.
-  Until then staff leave sits with HR and school leadership, and ordinary
-  staff roles get only `hr.org:view`.
+- **Staff still can't file their own leave.** Phase 9 built the "own records
+  only" mechanism (`SELF_SCOPED_ROLE_KEYS`), but it resolves to a set of
+  *student* ids — the shape a parent, student or driver needs. Staff
+  self-service needs the same idea pointed at the viewer's own `Staff` row,
+  plus a staff-facing surface that is scoped rather than refused, since the
+  staff gate currently refuses every self-scoped decision outright. Until
+  that exists `hr.leave` stays unscoped and therefore stays with HR and
+  school leadership; ordinary staff roles get only `hr.org:view`.
 - **Exiting a staff member disables their login but doesn't reassign their
   work.** Subject assignments, timetable slots and authored assignments stay
   pointed at them; nothing prompts a handover.
@@ -291,15 +321,15 @@ before this touches anything real.
   pre-approval by Meta.
 - **Quiet hours are UTC.** `Branch.timezone` exists and isn't consulted yet;
   a school in IST setting 21:00 is currently setting 21:00 UTC.
-- **Phase 8+ tables have no RBAC permissions yet.** `src/lib/permissions.ts`
-  lists foundation, SIS, Academics, Admissions, Finance, LMS, Connect and HR
-  modules. Adding a module's permissions belongs with the code that first
-  checks them.
+- **Phase 10+ tables have no RBAC permissions yet.** `src/lib/permissions.ts`
+  lists foundation, SIS, Academics, Admissions, Finance, LMS, Connect, HR
+  and Operations modules. Adding a module's permissions belongs with the
+  code that first checks them.
 - **Students don't submit their own work.** Teachers record submissions and
   marks, which matches how offline work actually arrives and how §10.3
-  describes the teacher's day. A student-facing portal needs student logins
-  plus a third attribute policy ("own records only") and is its own slice —
-  the same slice that would give parents a view.
+  describes the teacher's day. Phase 9 gave students a login and a read-only
+  view of their marks; uploading an answer needs the Files adapter, which is
+  not built.
 - **Examcell is not built.** Question banks, paper generation, online exam
   attempts and invigilation (blueprint 11.15) are the other half of the
   blueprint's Phase 5 line. The tables exist; nothing reads them. Report

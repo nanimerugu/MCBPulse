@@ -29,7 +29,7 @@ export type ModuleAccessResult =
   | { ok: true; access: ModuleAccess }
   | {
       ok: false;
-      reason: "no_branch" | "feature_disabled" | "forbidden";
+      reason: "no_branch" | "feature_disabled" | "forbidden" | "self_scoped";
       viewer: ViewerContext;
       ctx: BranchContext | null;
       flag: string;
@@ -41,6 +41,14 @@ export type SisAccessResult = ModuleAccessResult;
  * tenant (which branch?) → feature flag → authorize(). Pages render an
  * explanation for each failure instead of a bare 403, because "you have no
  * branch yet" and "you lack sis.students:view" need different fixes.
+ *
+ * SELF-SCOPED GRANTS ARE REFUSED HERE. A parent holds `sis.students:view`
+ * for their own children, and these are the staff-wide screens: serving a
+ * self-scoped viewer the unfiltered roster is precisely the leak the scope
+ * exists to prevent. Every one of these pages would have to filter by the
+ * viewer's children to be safe, none of them do, so the gate fails closed
+ * and sends them to /portal instead. Phase 9's portal is the surface that
+ * knows how to narrow.
  */
 export async function loadModuleAccess(
   requestedBranchId: string | undefined,
@@ -63,6 +71,7 @@ export async function loadModuleAccess(
     branchId: ctx.branch.id,
   });
   if (!decision.allowed) return { ok: false, reason: "forbidden", viewer, ctx, flag };
+  if (decision.selfScoped) return { ok: false, reason: "self_scoped", viewer, ctx, flag };
 
   return { ok: true, access: { viewer, ctx, decision } };
 }
@@ -90,6 +99,10 @@ export async function requireModuleAccessForAction(
   if (!(await isFeatureEnabled(flag, ctx.organizationId))) throw new ForbiddenError("This module is not enabled");
 
   const decision = await requirePermission(viewer.userId, module, action, { organizationId: ctx.organizationId, branchId });
+  // Same rule as the page gate: a self-scoped grant never reaches a
+  // staff-wide write. A parent's `sis.students:view` must not become a
+  // licence to edit the roster through a hand-made POST.
+  if (decision.selfScoped) throw new ForbiddenError("This action is not available from a parent or student account");
   return { viewer, ctx, decision };
 }
 
@@ -153,11 +166,18 @@ export async function loadModuleAccessAny(
   }
 
   const scope = { organizationId: ctx.organizationId, branchId: ctx.branch.id };
+  let sawSelfScoped = false;
   for (const p of permissions) {
     const decision = await resolveAccess(viewer.userId, p.module, p.action, scope);
-    if (decision.allowed) return { ok: true, access: { viewer, ctx, decision } };
+    if (!decision.allowed) continue;
+    // Self-scoped grants are refused here too — see loadModuleAccess.
+    if (decision.selfScoped) {
+      sawSelfScoped = true;
+      continue;
+    }
+    return { ok: true, access: { viewer, ctx, decision } };
   }
-  return { ok: false, reason: "forbidden", viewer, ctx, flag };
+  return { ok: false, reason: sawSelfScoped ? "self_scoped" : "forbidden", viewer, ctx, flag };
 }
 
 export const loadOpsAccess = (requestedBranchId: string | undefined, module: string, action: Action) =>

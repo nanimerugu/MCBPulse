@@ -30,9 +30,9 @@ export default async function DashboardPage() {
       <div>
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Welcome, {viewer.name}</h1>
         <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-          Phase 0 (tenancy, identity, RBAC, audit, feature flags), Phase 1 (students, guardians, staff, academic
-          structure) and Phase 2 (subjects, teaching assignments, timetable, attendance) are live. Everything else in the
-          nav is a placeholder for the phase that builds it.
+          Students, academics, admissions, finance, learning, communication, HR, operations and the family portal are
+          live. Anything still greyed out in the nav is a placeholder for the phase that builds it, and each module can
+          be switched off per organization with its feature flag.
         </p>
       </div>
 
