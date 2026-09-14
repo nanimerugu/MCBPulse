@@ -1,10 +1,15 @@
-// MCBPulse — Phase 0 foundation schema.
+// MCBPulse — canonical data model (docs/architecture-blueprint-raw.md, section 8).
 //
-// Scope (per docs/architecture-blueprint-raw.md, section 20 "Phase 0 — Foundation"):
-//   Tenant model, identity, RBAC, audit, feature flags.
-// Out of scope until later phases: SIS, academics, finance, admissions, LMS, HR,
-// operations, communication, AI, and the shared workflow/approval engine — those
-// each get their own schema slice in the phase that introduces them (see docs).
+// Two tiers live in this file:
+//   1. Phase 0 foundation (WORKING): tenancy, identity, RBAC, audit, feature
+//      flags. Real code reads and writes these tables today.
+//   2. Phase 1+ domains (SCHEMA ONLY): People, Academics, Attendance,
+//      Admissions, LMS, Assessment, Finance, Accounting, HR, Operations,
+//      Communication, Files, AI. These tables exist and migrate, but no
+//      route, permission or business logic touches them yet — each gets
+//      wired up in the phase that builds it (blueprint section 20).
+// The shared workflow/approval engine (section 12) is deliberately absent
+// from both tiers: it needs a real module to drive its design.
 //
 // Conventions enforced throughout (blueprint section 9 "Important Database Rules"):
 //   - UUID primary keys for every public identifier.
@@ -48,6 +53,34 @@ model Organization {
   featureFlags    FeatureFlagOverride[]
   auditEvents     AuditEvent[]
 
+  // Phase 1+ root entities scoped directly to the organization. Child
+  // tables (InvoiceLine, Question, RouteStop, ...) inherit tenant scope
+  // through their parent instead of carrying their own organizationId.
+  students              Student[]
+  staff                 Staff[]
+  subjects              Subject[]
+  curricula             Curriculum[]
+  leadSources           LeadSource[]
+  admissionCampaigns    AdmissionCampaign[]
+  leads                 Lead[]
+  courses               Course[]
+  feeHeads              FeeHead[]
+  invoices              Invoice[]
+  accounts              Account[]
+  journalEntries        JournalEntry[]
+  reconciliationRecords ReconciliationRecord[]
+  departments           Department[]
+  positions             Position[]
+  payrollRuns           PayrollRun[]
+  vehicles              Vehicle[]
+  messageTemplates      MessageTemplate[]
+  broadcasts            Broadcast[]
+  messages              Message[]
+  fileFolders           FileFolder[]
+  fileAssets            FileAsset[]
+  aiThreads             AiThread[]
+  aiGenerations         AiGeneration[]
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -65,17 +98,30 @@ enum BranchStatus {
 /// A school / campus within an organization. "Branch" in the blueprint's
 /// tenancy hierarchy (schools, branches and campuses are the same layer).
 model Branch {
-  id             String @id @default(uuid())
+  id             String       @id @default(uuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   name     String
   code     String // short code, unique per organization (e.g. "MAIN", "NORTH")
-  timezone String @default("Asia/Kolkata")
+  timezone String       @default("Asia/Kolkata")
   status   BranchStatus @default(ONBOARDING)
 
   academicYears   AcademicYear[]
   roleAssignments RoleAssignment[]
+
+  students       Student[]
+  staff          Staff[]
+  grades         Grade[]
+  leads          Lead[]
+  feeStructures  FeeStructure[]
+  payrollRuns    PayrollRun[]
+  vehicles       Vehicle[]
+  routes         Route[]
+  hostelBlocks   HostelBlock[]
+  inventoryItems InventoryItem[]
+  libraryItems   LibraryItem[]
+  canteenItems   CanteenItem[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -95,10 +141,14 @@ model AcademicYear {
   name      String // e.g. "2025-2026"
   startDate DateTime
   endDate   DateTime
-  isCurrent Boolean @default(false)
-  isClosed  Boolean @default(false)
+  isCurrent Boolean  @default(false)
+  isClosed  Boolean  @default(false)
 
   roleAssignments RoleAssignment[]
+  sections        Section[]
+  feeStructures   FeeStructure[]
+  invoices        Invoice[]
+  appraisals      Appraisal[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -135,8 +185,19 @@ model User {
   lastLoginAt DateTime?
 
   roleAssignments RoleAssignment[]
-  auditEvents     AuditEvent[] @relation("AuditActor")
+  auditEvents     AuditEvent[]     @relation("AuditActor")
   refreshTokens   RefreshToken[]
+
+  // A User is a login. At most one of these profiles is the person behind
+  // it (a parent is a Guardian, a teacher is Staff, a pupil is a Student).
+  studentProfile  Student?
+  guardianProfile Guardian?
+  staffProfile    Staff?
+
+  notifications Notification[]
+  ownedFiles    FileAsset[]
+  aiThreads     AiThread[]
+  aiGenerations AiGeneration[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -159,7 +220,7 @@ model User {
 /// (Prisma doesn't know the partial index is intentional) and delete that
 /// line before applying.
 model Role {
-  id             String  @id @default(uuid())
+  id             String        @id @default(uuid())
   organizationId String? // null = system-defined template role
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
@@ -220,7 +281,7 @@ model RoleAssignment {
   role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   branchId       String?
   branch         Branch?       @relation(fields: [branchId], references: [id], onDelete: Cascade)
   academicYearId String?
@@ -243,10 +304,10 @@ model RefreshToken {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  tokenHash        String  @unique
+  tokenHash         String  @unique
   replacedByTokenId String?
-  ipAddress        String?
-  userAgent        String?
+  ipAddress         String?
+  userAgent         String?
 
   expiresAt DateTime
   revokedAt DateTime?
@@ -290,9 +351,9 @@ model AuditEvent {
 
 /// The global definition and default state of a flag.
 model FeatureFlag {
-  key            String   @id
+  key            String  @id
   description    String?
-  defaultEnabled Boolean  @default(false)
+  defaultEnabled Boolean @default(false)
 
   overrides FeatureFlagOverride[]
 
@@ -314,4 +375,1477 @@ model FeatureFlagOverride {
   updatedAt DateTime @updatedAt
 
   @@unique([flagKey, organizationId])
+}
+
+// =============================================================================
+// PHASE 1+ CANONICAL DATA MODEL (blueprint section 8)
+//
+// Everything below this line is schema-only architecture, not a working
+// feature. No route, permission, or business logic reads or writes these
+// tables yet — that lands with the phase that actually builds each module
+// (see docs/architecture-blueprint-raw.md section 20). Building the schema
+// for all domains together, ahead of the business logic, is a deliberate
+// choice for this pass: it is the one "build the whole architecture" ask
+// that is actually safe to do in one shot, because a schema either migrates
+// cleanly or it doesn't — there's no partially-working business logic to
+// misjudge. The conventions from section 9 are applied uniformly:
+//   - UUID ids, organizationId (+ branchId/academicYearId where meaningful)
+//     on every tenant-scoped table.
+//   - Config/master data gets deletedAt; ledger/log-like data does not.
+//   - `version` (optimistic locking) on the handful of tables the blueprint
+//     names explicitly as high-conflict: fee invoices and attendance.
+// =============================================================================
+
+// --- People (extends Identity with the school-specific person records) -----
+
+enum StudentStatus {
+  ENQUIRY
+  APPLIED
+  ENROLLED
+  ALUMNI
+  WITHDRAWN
+  TRANSFERRED
+}
+
+enum GuardianRelationship {
+  FATHER
+  MOTHER
+  GUARDIAN
+  OTHER
+}
+
+/// The student's own record — distinct from `User`. A student only gets a
+/// `User` (portal login) once the school actually issues one; the SIS
+/// record exists from enquiry onward regardless.
+model Student {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String
+  branch         Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  userId         String?      @unique
+  user           User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  admissionNumber String
+  firstName       String
+  lastName        String
+  dateOfBirth     DateTime?
+  gender          String?
+  status          StudentStatus @default(ENQUIRY)
+  admissionDate   DateTime?
+  photoFileId     String?
+
+  currentSectionId String?
+  currentSection   Section? @relation(fields: [currentSectionId], references: [id], onDelete: SetNull)
+
+  guardianLinks     StudentGuardian[]
+  emergencyContacts EmergencyContact[]
+  enrollments       Enrollment[]
+  submissions       Submission[]
+  examAttempts      ExamAttempt[]
+  attendanceRecords AttendanceRecord[]
+  invoices          Invoice[]
+  concessions       Concession[]
+  transportLink     StudentTransport?
+  hostelAllocations HostelAllocation[]
+  libraryIssues     LibraryIssue[]
+  leaveRequests     LeaveRequest[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([organizationId, admissionNumber])
+  @@index([branchId, status])
+}
+
+model Guardian {
+  id     String  @id @default(uuid())
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  firstName  String
+  lastName   String
+  phone      String
+  email      String?
+  occupation String?
+
+  studentLinks StudentGuardian[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+/// Join table — a student can have multiple guardians and a guardian can
+/// have multiple students (siblings), per blueprint section 9.
+model StudentGuardian {
+  id           String               @id @default(uuid())
+  studentId    String
+  student      Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  guardianId   String
+  guardian     Guardian             @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+  relationship GuardianRelationship
+  isPrimary    Boolean              @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@unique([studentId, guardianId])
+}
+
+model EmergencyContact {
+  id        String  @id @default(uuid())
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  name         String
+  phone        String
+  relationship String
+
+  createdAt DateTime @default(now())
+}
+
+/// The employment record — distinct from `User` the same way Student is.
+model Staff {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String?
+  branch         Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  userId         String       @unique
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  departmentId   String?
+  department     Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  positionId     String?
+  position       Position?    @relation(fields: [positionId], references: [id], onDelete: SetNull)
+
+  employeeCode String
+  designation  String
+  joinDate     DateTime
+  exitDate     DateTime?
+
+  subjectAssignments SubjectAssignment[]
+  timetableSlots     TimetableSlot[]
+  attendanceSessions AttendanceSession[]
+  payslips           Payslip[]
+  appraisals         Appraisal[]
+  vehiclesDriven     Vehicle[]
+  leaveRequests      LeaveRequest[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([organizationId, employeeCode])
+}
+
+// --- Academics ---------------------------------------------------------
+
+model Grade {
+  id       String @id @default(uuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name     String
+  sequence Int
+
+  sections Section[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@unique([branchId, name])
+}
+
+model Section {
+  id             String       @id @default(uuid())
+  gradeId        String
+  grade          Grade        @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  name     String
+  capacity Int?
+
+  students           Student[]
+  subjectAssignments SubjectAssignment[]
+  timetableSlots     TimetableSlot[]
+  attendanceSessions AttendanceSession[]
+  assignments        Assignment[]
+  exams              Exam[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@unique([gradeId, academicYearId, name])
+}
+
+/// Organization-wide catalog entry (e.g. "Mathematics") — one Subject spans
+/// every branch/grade that teaches it.
+model Subject {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name String
+  code String
+
+  subjectAssignments SubjectAssignment[]
+  timetableSlots     TimetableSlot[]
+  questionBanks      QuestionBank[]
+  exams              Exam[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@unique([organizationId, code])
+}
+
+enum CurriculumType {
+  STATE_BOARD
+  CBSE
+  IB
+  CAMBRIDGE
+  MONTESSORI
+  PRESCHOOL
+  HIGHER_ED
+}
+
+model Curriculum {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name String
+  type CurriculumType
+
+  courses Course[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+}
+
+/// Which staff member teaches which subject to which section.
+model SubjectAssignment {
+  id        String  @id @default(uuid())
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  staffId   String
+  staff     Staff   @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([sectionId, subjectId])
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+model TimetableSlot {
+  id        String  @id @default(uuid())
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  staffId   String
+  staff     Staff   @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  dayOfWeek DayOfWeek
+  startTime String // "HH:mm" — a plain time-of-day, not tied to any date
+  endTime   String
+  room      String?
+
+  createdAt DateTime @default(now())
+
+  @@index([sectionId, dayOfWeek])
+}
+
+// --- Attendance ----------------------------------------------------------
+
+model AttendanceSession {
+  id             String  @id @default(uuid())
+  sectionId      String
+  section        Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  takenByStaffId String
+  takenByStaff   Staff   @relation(fields: [takenByStaffId], references: [id], onDelete: Restrict)
+
+  date     DateTime
+  lockedAt DateTime?
+
+  records AttendanceRecord[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([sectionId, date])
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+/// One of the blueprint's two explicitly named high-conflict record types
+/// (section 9) — multiple people can correct the same day's attendance for
+/// the same student. `version` backs an optimistic-locking update.
+model AttendanceRecord {
+  id        String            @id @default(uuid())
+  sessionId String
+  session   AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  status  AttendanceStatus
+  remarks String?
+  version Int              @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sessionId, studentId])
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Either studentId or staffId is set, never both or neither — Prisma has
+/// no declarative way to enforce that; it's an application-level invariant.
+model LeaveRequest {
+  id        String   @id @default(uuid())
+  studentId String?
+  student   Student? @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  staffId   String?
+  staff     Staff?   @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  fromDate         DateTime
+  toDate           DateTime
+  reason           String
+  status           LeaveRequestStatus @default(PENDING)
+  approvedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// --- Admissions ------------------------------------------------------------
+
+model LeadSource {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name String
+
+  leads Lead[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@unique([organizationId, name])
+}
+
+enum AdmissionCampaignChannel {
+  SMS
+  EMAIL
+  WHATSAPP
+  SOCIAL
+  LANDING_PAGE
+}
+
+/// Named distinctly from Connect's `Broadcast` — this is an admissions
+/// marketing campaign (lead generation), not a school-wide announcement.
+model AdmissionCampaign {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name      String
+  channel   AdmissionCampaignChannel
+  startDate DateTime
+  endDate   DateTime?
+
+  leads Lead[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+}
+
+enum LeadStage {
+  NEW
+  CONTACTED
+  QUALIFIED
+  APPLIED
+  ADMITTED
+  LOST
+}
+
+model Lead {
+  id             String             @id @default(uuid())
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String?
+  branch         Branch?            @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  sourceId       String?
+  source         LeadSource?        @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  campaignId     String?
+  campaign       AdmissionCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  name                    String
+  phone                   String
+  email                   String?
+  stage                   LeadStage @default(NEW)
+  assignedCounselorUserId String?
+
+  applications Application[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([organizationId, stage])
+}
+
+enum ApplicationStatus {
+  DOCUMENTS_PENDING
+  UNDER_REVIEW
+  OFFERED
+  ACCEPTED
+  REJECTED
+  WAITLISTED
+}
+
+model Application {
+  id     String @id @default(uuid())
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  applicantName   String
+  gradeAppliedFor String
+  status          ApplicationStatus @default(DOCUMENTS_PENDING)
+  submittedAt     DateTime?
+
+  documents    ApplicationDocument[]
+  appointments Appointment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ApplicationDocument {
+  id            String      @id @default(uuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  fileAssetId   String?
+  fileAsset     FileAsset?  @relation(fields: [fileAssetId], references: [id], onDelete: SetNull)
+
+  documentType String
+  verified     Boolean @default(false)
+
+  createdAt DateTime @default(now())
+}
+
+enum AppointmentType {
+  INTERVIEW
+  COUNSELING
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model Appointment {
+  id            String      @id @default(uuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  type        AppointmentType
+  status      AppointmentStatus @default(SCHEDULED)
+  scheduledAt DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// --- LMS ---------------------------------------------------------------
+
+model Course {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  curriculumId   String?
+  curriculum     Curriculum?  @relation(fields: [curriculumId], references: [id], onDelete: SetNull)
+
+  title String
+
+  modules     CourseModule[]
+  enrollments Enrollment[]
+  assignments Assignment[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model CourseModule {
+  id       String @id @default(uuid())
+  courseId String
+  course   Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  title    String
+  sequence Int
+
+  lessons Lesson[]
+
+  createdAt DateTime @default(now())
+}
+
+model Lesson {
+  id             String       @id @default(uuid())
+  courseModuleId String
+  courseModule   CourseModule @relation(fields: [courseModuleId], references: [id], onDelete: Cascade)
+
+  title    String
+  sequence Int
+  content  String?
+
+  resources LessonResource[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model LessonResource {
+  id       String @id @default(uuid())
+  lessonId String
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  fileAssetId String?
+  fileAsset   FileAsset? @relation(fields: [fileAssetId], references: [id], onDelete: SetNull)
+  url         String?
+  type        String
+
+  createdAt DateTime @default(now())
+}
+
+model Enrollment {
+  id        String  @id @default(uuid())
+  courseId  String
+  course    Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  enrolledAt DateTime @default(now())
+
+  @@unique([courseId, studentId])
+}
+
+model Assignment {
+  id        String   @id @default(uuid())
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  sectionId String?
+  section   Section? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+
+  title        String
+  instructions String?
+  dueAt        DateTime
+  maxMarks     Int
+
+  submissions Submission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum SubmissionStatus {
+  PENDING
+  SUBMITTED
+  LATE
+  GRADED
+}
+
+model Submission {
+  id           String     @id @default(uuid())
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  status       SubmissionStatus @default(PENDING)
+  submittedAt  DateTime?
+  fileAssetId  String?
+  fileAsset    FileAsset?       @relation(fields: [fileAssetId], references: [id], onDelete: SetNull)
+  marksAwarded Int?
+  feedback     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([assignmentId, studentId])
+}
+
+// --- Assessment ----------------------------------------------------------
+
+model QuestionBank {
+  id        String  @id @default(uuid())
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  name String
+
+  questions Question[]
+
+  createdAt DateTime @default(now())
+}
+
+enum QuestionType {
+  MCQ
+  SHORT_ANSWER
+  ESSAY
+  TRUE_FALSE
+}
+
+enum QuestionDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+model Question {
+  id             String       @id @default(uuid())
+  questionBankId String
+  questionBank   QuestionBank @relation(fields: [questionBankId], references: [id], onDelete: Cascade)
+
+  type          QuestionType
+  text          String
+  marks         Int
+  difficulty    QuestionDifficulty @default(MEDIUM)
+  correctAnswer String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Exam {
+  id        String  @id @default(uuid())
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  title           String
+  scheduledAt     DateTime
+  durationMinutes Int
+  maxMarks        Int
+
+  papers   ExamPaper[]
+  attempts ExamAttempt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ExamPaper {
+  id     String @id @default(uuid())
+  examId String
+  exam   Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  generatedFrom String // "manual" | "ai"
+  version       Int    @default(1)
+
+  createdAt DateTime @default(now())
+}
+
+enum ExamAttemptStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  SUBMITTED
+  GRADED
+}
+
+model ExamAttempt {
+  id        String  @id @default(uuid())
+  examId    String
+  exam      Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  status       ExamAttemptStatus @default(NOT_STARTED)
+  startedAt    DateTime?
+  submittedAt  DateTime?
+  marksAwarded Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([examId, studentId])
+}
+
+// --- Finance -------------------------------------------------------------
+// Money is stored as Decimal, never Float, so amounts never accumulate
+// binary rounding drift across invoice lines, partial payments and refunds.
+
+model FeeHead {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name String
+
+  structureLines FeeStructureLine[]
+  invoiceLines   InvoiceLine[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@unique([organizationId, name])
+}
+
+model FeeStructure {
+  id             String       @id @default(uuid())
+  branchId       String
+  branch         Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  name String
+
+  lines       FeeStructureLine[]
+  concessions Concession[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+}
+
+model FeeStructureLine {
+  id             String       @id @default(uuid())
+  feeStructureId String
+  feeStructure   FeeStructure @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
+  feeHeadId      String
+  feeHead        FeeHead      @relation(fields: [feeHeadId], references: [id], onDelete: Restrict)
+
+  amount Decimal @db.Decimal(12, 2)
+
+  @@unique([feeStructureId, feeHeadId])
+}
+
+model Concession {
+  id             String        @id @default(uuid())
+  studentId      String
+  student        Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  feeStructureId String?
+  feeStructure   FeeStructure? @relation(fields: [feeStructureId], references: [id], onDelete: SetNull)
+
+  amount           Decimal @db.Decimal(12, 2)
+  reason           String
+  approvedByUserId String?
+
+  createdAt DateTime @default(now())
+}
+
+enum InvoiceStatus {
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+/// The other explicitly high-conflict record (section 9): a cashier and a
+/// gateway webhook can both settle the same invoice at once. `version`
+/// backs the optimistic-locking update.
+model Invoice {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        Student      @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  invoiceNumber String
+  totalAmount   Decimal       @db.Decimal(12, 2)
+  dueDate       DateTime
+  status        InvoiceStatus @default(PENDING)
+  version       Int           @default(1)
+
+  lines    InvoiceLine[]
+  payments Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, invoiceNumber])
+  @@index([studentId, status])
+}
+
+model InvoiceLine {
+  id        String  @id @default(uuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  feeHeadId String
+  feeHead   FeeHead @relation(fields: [feeHeadId], references: [id], onDelete: Restrict)
+
+  amount Decimal @db.Decimal(12, 2)
+}
+
+enum PaymentMethod {
+  ONLINE
+  CASH
+  CHEQUE
+  BANK_TRANSFER
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model Payment {
+  id        String  @id @default(uuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  amount           Decimal       @db.Decimal(12, 2)
+  method           PaymentMethod
+  status           PaymentStatus @default(PENDING)
+  gatewayReference String?
+  paidAt           DateTime?
+
+  receipt Receipt?
+  refunds Refund[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Receipt {
+  id        String  @id @default(uuid())
+  paymentId String  @unique
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  receiptNumber String   @unique
+  issuedAt      DateTime @default(now())
+}
+
+enum RefundStatus {
+  REQUESTED
+  APPROVED
+  PROCESSED
+  REJECTED
+}
+
+model Refund {
+  id        String  @id @default(uuid())
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  amount      Decimal      @db.Decimal(12, 2)
+  reason      String
+  status      RefundStatus @default(REQUESTED)
+  processedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// --- Accounting ------------------------------------------------------------
+// Double-entry-ready (blueprint section 3): every JournalEntry's lines
+// must balance (sum debit == sum credit). That's enforced by the posting
+// service, not the schema.
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  INCOME
+  EXPENSE
+  EQUITY
+}
+
+model Account {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  code String
+  name String
+  type AccountType
+
+  journalLines JournalLine[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@unique([organizationId, code])
+}
+
+model JournalEntry {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  entryDate       DateTime
+  description     String
+  createdByUserId String
+  postedAt        DateTime?
+
+  lines JournalLine[]
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, entryDate])
+}
+
+model JournalLine {
+  id             String       @id @default(uuid())
+  journalEntryId String
+  journalEntry   JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  accountId      String
+  account        Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  debit  Decimal @default(0) @db.Decimal(12, 2)
+  credit Decimal @default(0) @db.Decimal(12, 2)
+}
+
+enum ReconciliationSource {
+  BANK
+  GATEWAY
+  CASH
+}
+
+enum ReconciliationStatus {
+  MATCHED
+  UNMATCHED
+  DISPUTED
+}
+
+model ReconciliationRecord {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  source        ReconciliationSource
+  referenceDate DateTime
+  amount        Decimal              @db.Decimal(12, 2)
+  status        ReconciliationStatus @default(UNMATCHED)
+  externalRef   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, referenceDate])
+}
+
+// --- HR ----------------------------------------------------------------
+// The employee record itself is `Staff` (People section). These are the
+// structures around it.
+
+model Department {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name String
+
+  staff     Staff[]
+  positions Position[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@unique([organizationId, name])
+}
+
+model Position {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departmentId   String?
+  department     Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  title String
+
+  staff Staff[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+}
+
+enum PayrollRunStatus {
+  DRAFT
+  PROCESSED
+  PAID
+}
+
+model PayrollRun {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String
+  branch         Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  periodMonth Int
+  periodYear  Int
+  status      PayrollRunStatus @default(DRAFT)
+  processedAt DateTime?
+
+  payslips Payslip[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([branchId, periodYear, periodMonth])
+}
+
+model Payslip {
+  id           String     @id @default(uuid())
+  payrollRunId String
+  payrollRun   PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  staffId      String
+  staff        Staff      @relation(fields: [staffId], references: [id], onDelete: Restrict)
+
+  grossPay   Decimal @db.Decimal(12, 2)
+  deductions Decimal @db.Decimal(12, 2)
+  netPay     Decimal @db.Decimal(12, 2)
+
+  generatedAt DateTime @default(now())
+
+  @@unique([payrollRunId, staffId])
+}
+
+model Appraisal {
+  id             String       @id @default(uuid())
+  staffId        String
+  staff          Staff        @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  score             Int?
+  comments          String?
+  submittedByUserId String
+  submittedAt       DateTime @default(now())
+
+  @@unique([staffId, academicYearId])
+}
+
+// --- Operations ------------------------------------------------------------
+
+model Vehicle {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String
+  branch         Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  driverStaffId  String?
+  driverStaff    Staff?       @relation(fields: [driverStaffId], references: [id], onDelete: SetNull)
+
+  registrationNumber String
+  capacity           Int
+
+  routes Route[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@unique([organizationId, registrationNumber])
+}
+
+model Route {
+  id        String   @id @default(uuid())
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  vehicleId String?
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+
+  name String
+
+  stops             RouteStop[]
+  studentTransports StudentTransport[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+}
+
+model RouteStop {
+  id      String @id @default(uuid())
+  routeId String
+  route   Route  @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  name      String
+  sequence  Int
+  latitude  Float?
+  longitude Float?
+
+  studentTransports StudentTransport[]
+
+  @@unique([routeId, sequence])
+}
+
+model StudentTransport {
+  id        String    @id @default(uuid())
+  studentId String    @unique
+  student   Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  routeId   String
+  route     Route     @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  stopId    String
+  stop      RouteStop @relation(fields: [stopId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+}
+
+model HostelBlock {
+  id       String @id @default(uuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name String
+
+  rooms HostelRoom[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+}
+
+model HostelRoom {
+  id            String      @id @default(uuid())
+  hostelBlockId String
+  hostelBlock   HostelBlock @relation(fields: [hostelBlockId], references: [id], onDelete: Cascade)
+
+  roomNumber String
+  capacity   Int
+
+  allocations HostelAllocation[]
+
+  @@unique([hostelBlockId, roomNumber])
+}
+
+model HostelAllocation {
+  id           String     @id @default(uuid())
+  hostelRoomId String
+  hostelRoom   HostelRoom @relation(fields: [hostelRoomId], references: [id], onDelete: Restrict)
+  studentId    String
+  student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  allocatedFrom DateTime
+  allocatedTo   DateTime?
+
+  createdAt DateTime @default(now())
+}
+
+model InventoryItem {
+  id       String @id @default(uuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name           String
+  sku            String
+  quantityOnHand Int    @default(0)
+  reorderLevel   Int    @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([branchId, sku])
+}
+
+model LibraryItem {
+  id       String @id @default(uuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  title           String
+  author          String?
+  isbn            String?
+  totalCopies     Int     @default(1)
+  availableCopies Int     @default(1)
+
+  issues LibraryIssue[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+}
+
+model LibraryIssue {
+  id            String      @id @default(uuid())
+  libraryItemId String
+  libraryItem   LibraryItem @relation(fields: [libraryItemId], references: [id], onDelete: Restrict)
+  studentId     String?
+  student       Student?    @relation(fields: [studentId], references: [id], onDelete: SetNull)
+
+  issuedAt   DateTime  @default(now())
+  dueAt      DateTime
+  returnedAt DateTime?
+}
+
+model CanteenItem {
+  id       String @id @default(uuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name  String
+  price Decimal @db.Decimal(10, 2)
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+}
+
+// --- Communication (Connect) -----------------------------------------------
+
+enum MessageChannel {
+  SMS
+  EMAIL
+  WHATSAPP
+  PUSH
+  VOICE
+}
+
+model MessageTemplate {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name    String
+  channel MessageChannel
+  body    String
+
+  broadcasts Broadcast[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+enum BroadcastStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+}
+
+model Broadcast {
+  id             String           @id @default(uuid())
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  templateId     String?
+  template       MessageTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  channel     MessageChannel
+  audience    Json // the segment definition — resolved to recipients at send time
+  scheduledAt DateTime?
+  status      BroadcastStatus @default(DRAFT)
+
+  messages Message[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  broadcastId    String?
+  broadcast      Broadcast?   @relation(fields: [broadcastId], references: [id], onDelete: SetNull)
+
+  channel           MessageChannel
+  recipientUserId   String?
+  recipientAddress  String // phone / email / device token, per channel
+  status            MessageStatus  @default(QUEUED)
+  providerMessageId String?
+  failureReason     String?
+  sentAt            DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, status])
+}
+
+model Notification {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title  String
+  body   String
+  readAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, readAt])
+}
+
+// --- Files -----------------------------------------------------------------
+
+model FileFolder {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  parentFolderId String?
+  parentFolder   FileFolder?  @relation("FolderTree", fields: [parentFolderId], references: [id], onDelete: SetNull)
+
+  name String
+
+  children FileFolder[] @relation("FolderTree")
+  files    FileAsset[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+}
+
+/// Every upload carries owner, tenant, checksum, MIME type and version
+/// metadata (blueprint section 9). The bytes live in object storage at
+/// `storageKey`; this row is the record of them.
+model FileAsset {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  folderId       String?
+  folder         FileFolder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  ownerUserId    String?
+  ownerUser      User?        @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+
+  fileName       String
+  mimeType       String
+  sizeBytes      Int
+  checksum       String
+  storageKey     String @unique
+  classification String @default("internal")
+
+  versions             FileVersion[]
+  applicationDocuments ApplicationDocument[]
+  lessonResources      LessonResource[]
+  submissions          Submission[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+}
+
+model FileVersion {
+  id          String    @id @default(uuid())
+  fileAssetId String
+  fileAsset   FileAsset @relation(fields: [fileAssetId], references: [id], onDelete: Cascade)
+
+  versionNumber Int
+  storageKey    String @unique
+  checksum      String
+
+  createdAt DateTime @default(now())
+
+  @@unique([fileAssetId, versionNumber])
+}
+
+// --- AI (Ved AI equivalent, blueprint section 19) --------------------------
+// Every AI action is tenant-scoped, attributed to a user, and metered.
+
+model AiThread {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title String?
+
+  messages AiMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum AiMessageRole {
+  SYSTEM
+  USER
+  ASSISTANT
+}
+
+model AiMessage {
+  id       String   @id @default(uuid())
+  threadId String
+  thread   AiThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  role    AiMessageRole
+  content String
+
+  createdAt DateTime @default(now())
+}
+
+enum AiCapability {
+  LESSON_PLANNER
+  QUESTION_GENERATOR
+  WORKSHEET_GENERATOR
+  GRADING_ASSIST
+  WRITING_ASSIST
+  TRANSLATION
+  DOCUMENT_EXTRACTION
+  SCHOOL_COPILOT
+  PREDICTIVE_INSIGHT
+}
+
+enum AiGenerationStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REJECTED_BY_REVIEWER
+}
+
+/// One AI capability invocation. `status` includes REJECTED_BY_REVIEWER
+/// because the blueprint's guardrail for grading/generation is always a
+/// human in the loop (section 19's "teacher final approval").
+model AiGeneration {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  capability    AiCapability
+  status        AiGenerationStatus @default(PENDING)
+  inputSummary  String?
+  outputSummary String?
+
+  usageRecords AiUsageRecord[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([organizationId, capability])
+}
+
+model AiUsageRecord {
+  id           String       @id @default(uuid())
+  generationId String
+  generation   AiGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  provider  String
+  model     String
+  tokensIn  Int
+  tokensOut Int
+  costUsd   Decimal? @db.Decimal(10, 6)
+
+  createdAt DateTime @default(now())
 }

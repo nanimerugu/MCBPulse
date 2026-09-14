@@ -13,5 +13,12 @@ export default defineConfig({
   },
   datasource: {
     url: env("DATABASE_URL"),
+    // A dedicated, always-empty database that `prisma migrate dev` replays
+    // the migration history into to compute diffs. Explicit rather than
+    // auto-managed because the auto-created one on `prisma dev`'s local
+    // server was left dirty between runs and broke migration generation.
+    // Read via process.env, not env(), so it's simply absent (not an error)
+    // in CI/production where only `migrate deploy` runs and no shadow DB exists.
+    shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL,
   },
 });
