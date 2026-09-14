@@ -1,0 +1,317 @@
+// MCBPulse — Phase 0 foundation schema.
+//
+// Scope (per docs/architecture-blueprint-raw.md, section 20 "Phase 0 — Foundation"):
+//   Tenant model, identity, RBAC, audit, feature flags.
+// Out of scope until later phases: SIS, academics, finance, admissions, LMS, HR,
+// operations, communication, AI, and the shared workflow/approval engine — those
+// each get their own schema slice in the phase that introduces them (see docs).
+//
+// Conventions enforced throughout (blueprint section 9 "Important Database Rules"):
+//   - UUID primary keys for every public identifier.
+//   - Every tenant-scoped table carries organizationId (+ branchId/academicYearId
+//     when the record is naturally scoped that narrowly).
+//   - Config/master data is soft-deleted (deletedAt); ledger-like/audit data is
+//     insert-only and never deleted or mutated by application code.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Tenant domain (blueprint section 4: Platform -> Organization -> Branch ->
+// Academic Year -> Class/Section; section 8 "Tenant" row).
+// ---------------------------------------------------------------------------
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+  ARCHIVED
+}
+
+/// A trust/school-group: the top-level tenant boundary. Every business record
+/// in every later phase traces back to one organizationId.
+model Organization {
+  id     String             @id @default(uuid())
+  name   String
+  slug   String             @unique
+  status OrganizationStatus @default(TRIAL)
+
+  branches        Branch[]
+  roles           Role[]
+  roleAssignments RoleAssignment[]
+  featureFlags    FeatureFlagOverride[]
+  auditEvents     AuditEvent[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([status])
+}
+
+enum BranchStatus {
+  ACTIVE
+  ONBOARDING
+  SUSPENDED
+  CLOSED
+}
+
+/// A school / campus within an organization. "Branch" in the blueprint's
+/// tenancy hierarchy (schools, branches and campuses are the same layer).
+model Branch {
+  id             String @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name     String
+  code     String // short code, unique per organization (e.g. "MAIN", "NORTH")
+  timezone String @default("Asia/Kolkata")
+  status   BranchStatus @default(ONBOARDING)
+
+  academicYears   AcademicYear[]
+  roleAssignments RoleAssignment[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+/// One academic year at a branch. Never overwritten across a year change —
+/// closing a year is a status transition, not a delete (blueprint section 9).
+model AcademicYear {
+  id       String @id @default(uuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  name      String // e.g. "2025-2026"
+  startDate DateTime
+  endDate   DateTime
+  isCurrent Boolean @default(false)
+  isClosed  Boolean @default(false)
+
+  roleAssignments RoleAssignment[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([branchId, name])
+  @@index([branchId, isCurrent])
+}
+
+// ---------------------------------------------------------------------------
+// Identity & RBAC/ABAC domain (blueprint sections 4 and 5).
+//
+// authorize(user, action, resource):
+//   tenant_scope -> role_permission -> attribute_policy -> approval_policy -> allow/deny
+// Phase 0 implements the first two stages (tenant scope + role/permission);
+// attribute and approval policies land with the modules that need them.
+// ---------------------------------------------------------------------------
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+}
+
+/// A person's global identity. Cross-tenant by design — the same person can
+/// hold role assignments in more than one organization (e.g. a group auditor).
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String?
+  name         String
+  status       UserStatus @default(INVITED)
+
+  lastLoginAt DateTime?
+
+  roleAssignments RoleAssignment[]
+  auditEvents     AuditEvent[] @relation("AuditActor")
+  refreshTokens   RefreshToken[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([status])
+}
+
+/// A named bundle of permissions. System roles (organizationId = null) are
+/// seeded once and shared by every tenant; an organization may also define
+/// its own custom roles.
+///
+/// KNOWN LIMITATION: uniqueness of `key` among system roles is enforced by a
+/// partial unique index (`WHERE "organizationId" IS NULL`) hand-added to the
+/// initial migration, because Postgres treats every NULL as distinct — the
+/// `@@unique([organizationId, key])` below does NOT by itself stop two
+/// system roles from sharing a key, and Prisma's schema language cannot
+/// express a partial index. The next time `prisma migrate dev` generates a
+/// migration, check its diff for a `DROP INDEX "Role_system_key_key"` line
+/// (Prisma doesn't know the partial index is intentional) and delete that
+/// line before applying.
+model Role {
+  id             String  @id @default(uuid())
+  organizationId String? // null = system-defined template role
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  key         String // stable machine key, e.g. "principal", "accountant"
+  name        String
+  description String?
+  isSystem    Boolean @default(false)
+
+  rolePermissions RolePermission[]
+  roleAssignments RoleAssignment[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([organizationId, key])
+  @@index([organizationId])
+}
+
+/// module:action pairs (blueprint section 5's explicit action verbs). Global
+/// and seeded — not tenant-scoped, since the catalog of possible actions is
+/// the same for every school.
+model Permission {
+  id     String @id @default(uuid())
+  module String // e.g. "sis", "finance.invoice", "admissions.lead"
+  action String // view | create | edit | delete | approve | publish | export | message | pay | refund | configure
+
+  key         String  @unique // `${module}:${action}`, denormalized for fast lookups
+  description String?
+
+  rolePermissions RolePermission[]
+
+  createdAt DateTime @default(now())
+
+  @@index([module])
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([roleId, permissionId])
+}
+
+/// Binds a user to a role within a tenant scope. branchId/academicYearId
+/// narrow the scope (ABAC) — null means "every branch" / "every year" within
+/// the organization. This is the row `authorize()` looks up first.
+model RoleAssignment {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String?
+  branch         Branch?       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  academicYearId String?
+  academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  @@index([userId])
+  @@index([organizationId, branchId])
+}
+
+/// Rotating refresh tokens for API/mobile clients (blueprint section 18:
+/// "short-lived access tokens + rotating refresh tokens"). The web app's own
+/// session uses NextAuth's signed JWT cookie and does not need this table;
+/// it exists for the day a mobile app or third-party integration calls the
+/// API directly. Store only a hash, never the raw token.
+model RefreshToken {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash        String  @unique
+  replacedByTokenId String?
+  ipAddress        String?
+  userAgent        String?
+
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Audit domain (blueprint sections 5, 9, 18, 30): every privileged mutation
+// is logged, and the log itself is append-only — no update/delete path exists
+// in application code for this model.
+// ---------------------------------------------------------------------------
+
+model AuditEvent {
+  id             String        @id @default(uuid())
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  actorUserId    String?
+  actorUser      User?         @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  action       String // e.g. "role_assignment.created", "user.login_failed"
+  resourceType String
+  resourceId   String?
+
+  before Json?
+  after  Json?
+
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([resourceType, resourceId])
+}
+
+// ---------------------------------------------------------------------------
+// Feature flags (blueprint sections 6, 20, 24).
+// ---------------------------------------------------------------------------
+
+/// The global definition and default state of a flag.
+model FeatureFlag {
+  key            String   @id
+  description    String?
+  defaultEnabled Boolean  @default(false)
+
+  overrides FeatureFlagOverride[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Per-organization override of a flag's default.
+model FeatureFlagOverride {
+  id             String       @id @default(uuid())
+  flagKey        String
+  flag           FeatureFlag  @relation(fields: [flagKey], references: [key], onDelete: Cascade)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  enabled Boolean
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([flagKey, organizationId])
+}
