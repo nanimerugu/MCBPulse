@@ -297,6 +297,16 @@ before this touches anything real.
     Gated by `files.storage` and 3 `files.*` permissions. Code in
     `src/modules/files/`.
 
+16. **Staff self-service — working.** `/my/leave` shows a staff member their
+    own leave and their own processed payslips, and lets them file leave for
+    themselves. It takes NO HR permission: the action has no staffId
+    parameter at all, so a request on a colleague's behalf is not refused —
+    it is unexpressible. The README previously framed this as needing "an
+    attribute policy scoping `hr.leave`", which was the wrong shape:
+    `hr.leave` is the permission to administer *other* people's leave, and
+    granting it to every teacher is unsafe however it is scoped. Code in
+    `src/modules/hr/self.ts`.
+
 ## Known limitations / follow-ups
 
 - **Phase 9 is a responsive web portal, not native apps.** There is no React
@@ -340,14 +350,6 @@ before this touches anything real.
   on the run as context (an "N days" column) and changes nothing. Loss-of-pay
   rules, leave balances and leave types are a policy layer that isn't built;
   a school needing them must adjust the pay figure by hand before generating.
-- **Staff still can't file their own leave.** Phase 9 built the "own records
-  only" mechanism (`SELF_SCOPED_ROLE_KEYS`), but it resolves to a set of
-  *student* ids — the shape a parent, student or driver needs. Staff
-  self-service needs the same idea pointed at the viewer's own `Staff` row,
-  plus a staff-facing surface that is scoped rather than refused, since the
-  staff gate currently refuses every self-scoped decision outright. Until
-  that exists `hr.leave` stays unscoped and therefore stays with HR and
-  school leadership; ordinary staff roles get only `hr.org:view`.
 - **Exiting a staff member disables their login but doesn't reassign their
   work.** Subject assignments, timetable slots and authored assignments stay
   pointed at them; nothing prompts a handover.

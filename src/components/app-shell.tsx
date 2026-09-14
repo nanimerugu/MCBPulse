@@ -34,6 +34,9 @@ function permits(item: NavItem, held: ReadonlySet<string>): boolean {
 
 const NAV_SECTIONS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard" },
+  // No permission: this page resolves the viewer's OWN staff record and
+  // can only ever show their own leave and payslips.
+  { label: "My leave", href: "/my/leave", flag: "phase7.hr" },
   { label: "Students", href: "/students", flag: "phase1.sis", permission: "sis.students:view" },
   { label: "Staff", href: "/staff", flag: "phase1.sis", permission: "sis.staff:view" },
   { label: "Academics", href: "/academics", flag: "phase2.academics", permission: "academics.timetable:view" },
