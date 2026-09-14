@@ -50,6 +50,7 @@ const NAV_SECTIONS: NavItem[] = [
   { label: "Report cards", href: "/reports", flag: "reporting.cards", permission: "reporting.cards:view" },
   { label: "Files", href: "/files", flag: "files.storage", permission: "files.assets:view" },
   { label: "Reports & Analytics", href: "/analytics", flag: "phase11.analytics", permission: "analytics.dashboard:view" },
+  { label: "Automation", href: "/automation", flag: "automation.rules", permission: "automation.rules:view" },
   { label: "AI Copilot", href: "/ai", flag: "ai.copilot", permission: "ai.console:view" },
 ];
 

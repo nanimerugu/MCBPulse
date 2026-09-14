@@ -20,6 +20,7 @@ export const ANALYTICS_FLAG = "phase11.analytics";
 export const EXAMS_FLAG = "exams.examcell";
 export const FILES_FLAG = "files.storage";
 export const REPORTING_FLAG = "reporting.cards";
+export const AUTOMATION_FLAG = "automation.rules";
 
 export interface ModuleAccess {
   viewer: ViewerContext;
@@ -214,6 +215,11 @@ export const loadReportingAccess = (requestedBranchId: string | undefined, modul
   loadModuleAccess(requestedBranchId, REPORTING_FLAG, module, action);
 export const requireReportingAccessForAction = (branchId: string | undefined, module: string, action: Action) =>
   requireModuleAccessForAction(branchId, REPORTING_FLAG, module, action);
+
+export const loadAutomationAccess = (requestedBranchId: string | undefined, module: string, action: Action) =>
+  loadModuleAccess(requestedBranchId, AUTOMATION_FLAG, module, action);
+export const requireAutomationAccessForAction = (branchId: string | undefined, module: string, action: Action) =>
+  requireModuleAccessForAction(branchId, AUTOMATION_FLAG, module, action);
 
 export function actorOf(access: ModuleAccess): Actor {
   return { userId: access.viewer.userId, organizationId: access.ctx.organizationId };

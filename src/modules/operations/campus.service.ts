@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
 import type { ClinicOutcome, VisitorKind } from "@/generated/prisma/enums";
 import { notifyStudentGuardians, unreachedWarning, type GuardianNotifyOutcome } from "@/modules/connect/notify";
+import { emit } from "@/modules/automation/automation.service";
 import { SisError, type Actor } from "@/modules/sis/students.service";
 import type { OpsScope } from "@/modules/operations/library.service";
 
@@ -162,6 +163,20 @@ export async function recordClinicVisit(
     resourceId: input.studentId,
     after: { visitId: visit.id, outcome: input.outcome, notified: notified.queued, unreached: unreached ?? undefined },
   });
+
+  // A school may want its own rule on top of the built-in notice — "tell me
+  // whenever anyone is referred to hospital", say. Emitted after the record
+  // is safely written.
+  await emit(
+    "clinic.visit",
+    {
+      "student.name": student.firstName + " " + student.lastName,
+      "clinic.outcome": input.outcome,
+      "clinic.complaint": input.complaint,
+    },
+    { organizationId: scope.organizationId, studentId: input.studentId, userId: actor.userId },
+  );
+
   return { visit, notified, unreached };
 }
 

@@ -251,6 +251,10 @@ export const PERMISSIONS: PermissionDef[] = [
   { module: "reporting.cards", action: "create", description: "Generate a report card" },
   { module: "reporting.cards", action: "publish", description: "Publish a report card to families" },
   { module: "reporting.scales", action: "configure", description: "Manage grading scales" },
+
+  // --- Automation (blueprint section 12) -----------------------------------
+  { module: "automation.rules", action: "view", description: "View automation rules and their run history" },
+  { module: "automation.rules", action: "configure", description: "Create, enable and delete automation rules" },
 ];
 
 export function permissionKey(module: string, action: Action): string {

@@ -338,6 +338,21 @@ before this touches anything real.
     grading roster shows what was handed in, so nobody is asked to mark work
     they cannot read.
 
+20. **Automation — working, for the half that did not exist.** Blueprint §12
+    warns "do not build each module's approvals and notifications
+    separately", and this codebase did exactly that. This engine does **not**
+    retrofit those six approval flows — rewriting working code to gain
+    uniformity nobody has asked for would risk all six. What it adds is
+    **trigger → condition → action**: a school can say "when a payment over
+    ₹1,000 is received, thank the family" without anyone writing code.
+    Conditions compare numerically when both sides are numbers (so 
+    is false, not true), a missing fact is always false so a rule never
+    fires by accident, and an unknown  is left visible so a
+    broken rule looks broken. Every evaluation is recorded, matched or not,
+    so "why didn't my rule fire?" has an answer. Emitting is best-effort:
+    a rule can never roll back the payment that triggered it. Gated by
+    `automation.rules`. Code in `src/modules/automation/`.
+
 ## Known limitations / follow-ups
 
 - **Phase 9 is a responsive web portal, not native apps.** There is no React
@@ -352,6 +367,12 @@ before this touches anything real.
   invite flow, no email verification, no self-service password reset and no
   OTP. `Guardian.userId` and `Student.userId` are set directly; a real
   deployment needs an onboarding path before any of this reaches a family.
+- **Automation has no scheduler and no approval actions.** Date-based
+  triggers ("three days before a due date") need a job runner, which is not
+  built, and the only actions are notifications — it cannot assign a task,
+  update a field or call a webhook. The per-module approvals (student leave,
+  staff leave, refunds, admissions, payroll, report cards) remain separate
+  implementations, which is the §12 gap still open.
 - **Report cards sum exam and coursework marks rather than weighting them.**
   A weighting ("exams are 70%") is school policy, and inventing one would put
   a number on a report card that no teacher chose. Summing both totals is the

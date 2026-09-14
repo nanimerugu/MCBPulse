@@ -86,6 +86,7 @@ model Organization {
   fileAssets            FileAsset[]
   aiThreads             AiThread[]
   gradingScales         GradingScale[]
+  automationRules       AutomationRule[]
   aiGenerations         AiGeneration[]
 
   createdAt DateTime  @default(now())
@@ -2369,4 +2370,66 @@ model ReportCardLine {
   sequence Int
 
   @@unique([reportCardId, sequence])
+}
+
+// --- Automation (blueprint section 12) ---------------------------------------
+
+enum AutomationActionKind {
+  NOTIFY_GUARDIANS
+  NOTIFY_USER
+}
+
+/**
+ * "When X happens, and Y is true, do Z."
+ *
+ * This covers the TRIGGER → CONDITION → ACTION half of section 12. It
+ * deliberately does NOT replace the per-module approvals that already exist
+ * (student leave, staff leave, refunds, admissions, payroll, report cards) —
+ * see src/modules/automation/rules.ts for why.
+ */
+model AutomationRule {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name      String
+  eventKind String
+  /** Condition triples, stored as JSON: [{field, operator, value}]. */
+  conditions Json    @default("[]")
+  action     AutomationActionKind
+  /** Message body with {{fact}} placeholders. */
+  messageBody String
+  active      Boolean @default(true)
+
+  runs AutomationRun[]
+
+  createdByUserId String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime?
+
+  @@unique([organizationId, name])
+  @@index([organizationId, eventKind, active])
+}
+
+enum AutomationRunOutcome {
+  MATCHED
+  SKIPPED
+  FAILED
+}
+
+/** Every evaluation, so "why didn't my rule fire?" has an answer. */
+model AutomationRun {
+  id     String         @id @default(uuid())
+  ruleId String
+  rule   AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  outcome AutomationRunOutcome
+  /** The facts the rule was evaluated against. */
+  facts   Json
+  detail  String?
+
+  createdAt DateTime @default(now())
+
+  @@index([ruleId, createdAt])
 }

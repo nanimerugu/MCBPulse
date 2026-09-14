@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
+import { emit } from "@/modules/automation/automation.service";
 import type { PaymentMethod } from "@/generated/prisma/enums";
 import { formatDocumentNumber, formatMoney, fromMinor, paymentPosting, persistedStatus, refundPosting, toMinor } from "@/modules/finance/money";
 import { paidMinorOf } from "@/modules/finance/invoices.service";
@@ -85,6 +86,19 @@ export async function recordPayment(
       invoiceStatus: persistedStatus({ totalMinor, paidMinor: result.newPaid, cancelled: false }),
     },
   });
+
+  // AFTER the transaction has committed and the audit is written: an
+  // automation must never be able to roll back a payment.
+  await emit(
+    "payment.received",
+    {
+      "payment.amount": input.amountMinor / 100,
+      "payment.method": input.method,
+      "invoice.number": invoice.invoiceNumber,
+      "student.name": `${invoice.student.firstName} ${invoice.student.lastName}`,
+    },
+    { organizationId: actor.organizationId, studentId: invoice.studentId, userId: actor.userId },
+  );
 
   return result;
 }

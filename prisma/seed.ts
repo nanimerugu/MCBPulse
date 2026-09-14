@@ -770,6 +770,11 @@ async function main() {
     update: { defaultEnabled: true },
   });
   await db.featureFlag.upsert({
+    where: { key: "automation.rules" },
+    create: { key: "automation.rules", description: "Automation: when X happens and Y is true, do Z (section 12)", defaultEnabled: true },
+    update: { defaultEnabled: true },
+  });
+  await db.featureFlag.upsert({
     where: { key: "reporting.cards" },
     create: { key: "reporting.cards", description: "Report cards: grading scales and term reports", defaultEnabled: true },
     update: { defaultEnabled: true },

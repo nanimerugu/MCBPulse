@@ -226,6 +226,8 @@ const EXAMS_ALL = ["exams.banks:view", "exams.banks:create", "exams.banks:edit",
 const EXAMS_TEACHER = EXAMS_ALL;
 const EXAMS_READ = ["exams.banks:view", "exams.exams:view"];
 
+const AUTOMATION_ALL = ["automation.rules:view", "automation.rules:configure"];
+
 const REPORTING_ALL = ["reporting.cards:view", "reporting.cards:create", "reporting.cards:publish", "reporting.scales:configure"];
 /** A teacher fills in marks and generates; publishing to families is leadership's call. */
 const REPORTING_TEACHER = ["reporting.cards:view", "reporting.cards:create"];
@@ -244,13 +246,13 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     key: "platform_admin",
     name: "Platform Admin",
     description: "SaaS operations: all tenants, billing, feature flags",
-    permissions: [...FOUNDATION_ALL, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL, ...OPS_ALL, ...AI_ALL, ...ANALYTICS_ALL, ...EXAMS_ALL, ...FILES_ALL, ...REPORTING_ALL],
+    permissions: [...FOUNDATION_ALL, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL, ...OPS_ALL, ...AI_ALL, ...ANALYTICS_ALL, ...EXAMS_ALL, ...FILES_ALL, ...REPORTING_ALL, ...AUTOMATION_ALL],
   },
   {
     key: "organization_admin",
     name: "Organization Admin",
     description: "Trust/group administration across all branches",
-    permissions: [...ORG_ADMIN_SET, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL, ...OPS_ALL, ...AI_ALL, ...ANALYTICS_ALL, ...EXAMS_ALL, ...FILES_ALL, ...REPORTING_ALL],
+    permissions: [...ORG_ADMIN_SET, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL, ...OPS_ALL, ...AI_ALL, ...ANALYTICS_ALL, ...EXAMS_ALL, ...FILES_ALL, ...REPORTING_ALL, ...AUTOMATION_ALL],
   },
   {
     key: "principal",
