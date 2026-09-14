@@ -2,8 +2,10 @@ import "server-only";
 import { db } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
 import type { MessageChannel } from "@/generated/prisma/enums";
-import { isWithinQuietHours, nextSendableAt, planDelivery, SUPPRESSION_LABELS, type QuietHours } from "@/modules/connect/delivery-policy";
+import { zonedLocalToUtc } from "@/lib/time-zone";
+import { isWithinQuietHours, nextSendableAt, planDelivery, SUPPRESSION_LABELS } from "@/modules/connect/delivery-policy";
 import { getProvider } from "@/modules/connect/providers";
+import { branchTimeZone, quietHoursFor } from "@/modules/connect/quiet-hours";
 import { render, unknownVariables } from "@/modules/connect/templates";
 import { parseAudience, resolveAudience, type AudienceSpec } from "@/modules/connect/audience";
 import { SisError, type Actor } from "@/modules/sis/students.service";
@@ -13,12 +15,6 @@ export interface BroadcastScope {
   branchId: string;
   branchName: string;
   organizationName: string;
-}
-
-async function quietHoursOf(organizationId: string): Promise<QuietHours | null> {
-  const org = await db.organization.findUnique({ where: { id: organizationId }, select: { quietHoursStart: true, quietHoursEnd: true } });
-  if (!org?.quietHoursStart || !org?.quietHoursEnd) return null;
-  return { start: org.quietHoursStart, end: org.quietHoursEnd };
 }
 
 export async function listBroadcasts(organizationId: string) {
@@ -48,17 +44,27 @@ export async function createBroadcast(
   const unknown = unknownVariables(input.body);
   if (unknown.length > 0) throw new SisError(`Unknown template variable(s): ${unknown.join(", ")}`);
 
+  // What was typed is a time on the campus clock. It used to be stored as if
+  // it were UTC — harmless while nothing acted on it, wrong by five and a
+  // half hours now that the scheduler really sends at that moment.
+  let scheduledAt: Date | null = null;
+  if (input.scheduledAt) {
+    scheduledAt = zonedLocalToUtc(input.scheduledAt, await branchTimeZone(scope.branchId));
+    if (!scheduledAt) throw new SisError("That isn't a real date and time");
+  }
+
   const broadcast = await db.broadcast.create({
     data: {
       organizationId: actor.organizationId,
+      branchId: scope.branchId,
       templateId: input.templateId ?? null,
       channel: input.channel,
       audience: input.audience as object,
       subject: input.subject ?? null,
       body: input.body,
       createdByUserId: actor.userId,
-      scheduledAt: input.scheduledAt ? new Date(`${input.scheduledAt}:00.000Z`) : null,
-      status: input.scheduledAt ? "SCHEDULED" : "DRAFT",
+      scheduledAt,
+      status: scheduledAt ? "SCHEDULED" : "DRAFT",
     },
   });
 
@@ -91,7 +97,7 @@ export async function previewBroadcast(broadcastId: string, scope: BroadcastScop
 
   const members = await resolveAudience(spec, broadcast.channel, scope);
   const plan = planDelivery(members.map((m) => m.recipient));
-  const quiet = await quietHoursOf(scope.organizationId);
+  const { quiet, timeZone } = await quietHoursFor(scope.organizationId, scope.branchId);
   const now = new Date();
 
   const first = plan.send[0];
@@ -102,8 +108,8 @@ export async function previewBroadcast(broadcastId: string, scope: BroadcastScop
     willSend: plan.send.length,
     suppressed: plan.suppressed.map((s) => ({ name: s.recipient.name, address: s.recipient.address, reason: SUPPRESSION_LABELS[s.reason] })),
     sample: first && rendered ? { name: first.name, address: first.address, text: rendered.text, missing: rendered.missing } : null,
-    quietHoursNow: isWithinQuietHours(now, quiet),
-    deferUntil: isWithinQuietHours(now, quiet) ? nextSendableAt(now, quiet) : null,
+    quietHoursNow: isWithinQuietHours(now, quiet, timeZone),
+    deferUntil: isWithinQuietHours(now, quiet, timeZone) ? nextSendableAt(now, quiet, timeZone) : null,
     providerDelivers: getProvider(broadcast.channel).delivers,
   };
 }
@@ -121,8 +127,8 @@ export interface SendOutcome {
  * provider — so a crash mid-send leaves a queue, not a mystery.
  *
  * Quiet hours defer rather than block: the broadcast is scheduled for the
- * next sendable moment (a real deployment runs the queue worker from
- * section 6; here the scheduled time is recorded and the send stops).
+ * next sendable moment, and the scheduler's deferred-delivery job sends it
+ * then (src/modules/connect/deferred.service.ts).
  */
 export async function sendBroadcast(broadcastId: string, scope: BroadcastScope, actor: Actor, opts: { ignoreQuietHours?: boolean } = {}): Promise<SendOutcome> {
   const broadcast = await db.broadcast.findFirst({ where: { id: broadcastId, organizationId: scope.organizationId } });
@@ -132,11 +138,11 @@ export async function sendBroadcast(broadcastId: string, scope: BroadcastScope, 
   const spec = parseAudience(broadcast.audience);
   if (!spec) throw new SisError("This broadcast has an unreadable audience");
 
-  const quiet = await quietHoursOf(scope.organizationId);
+  const { quiet, timeZone } = await quietHoursFor(scope.organizationId, scope.branchId);
   const now = new Date();
-  if (!opts.ignoreQuietHours && isWithinQuietHours(now, quiet)) {
-    const deferTo = nextSendableAt(now, quiet);
-    await db.broadcast.update({ where: { id: broadcastId }, data: { status: "SCHEDULED", scheduledAt: deferTo } });
+  if (!opts.ignoreQuietHours && isWithinQuietHours(now, quiet, timeZone)) {
+    const deferTo = nextSendableAt(now, quiet, timeZone);
+    await db.broadcast.update({ where: { id: broadcastId }, data: { status: "SCHEDULED", scheduledAt: deferTo, branchId: broadcast.branchId ?? scope.branchId } });
     await recordAuditEvent({
       organizationId: actor.organizationId,
       actorUserId: actor.userId,
@@ -152,7 +158,14 @@ export async function sendBroadcast(broadcastId: string, scope: BroadcastScope, 
   const plan = planDelivery(members.map((m) => m.recipient));
   if (plan.send.length === 0) throw new SisError("Nobody in this audience can be contacted on that channel");
 
-  await db.broadcast.update({ where: { id: broadcastId }, data: { status: "SENDING" } });
+  // Claim it. Two people pressing Send together — or a person and the
+  // scheduler — must not both send it: only one conditional update can move
+  // the broadcast out of the status it was read in.
+  const claimed = await db.broadcast.updateMany({
+    where: { id: broadcastId, status: broadcast.status },
+    data: { status: "SENDING", branchId: broadcast.branchId ?? scope.branchId },
+  });
+  if (claimed.count === 0) throw new SisError("This broadcast is already being sent");
 
   const provider = getProvider(broadcast.channel);
   let sent = 0;

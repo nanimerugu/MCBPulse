@@ -76,3 +76,29 @@ describe("quiet hours", () => {
     expect(nextSendableAt(at, quiet)).toBe(at);
   });
 });
+
+describe("quiet hours on the school's clock", () => {
+  const quiet = { start: "21:00", end: "07:00" };
+  const IST = "Asia/Kolkata";
+
+  it("reads 21:00–07:00 as India time, not UTC", () => {
+    // 16:00 UTC is 21:30 in India: quiet. Read in UTC it wasn't — the bug
+    // that texted Indian families at half past nine at night.
+    expect(isWithinQuietHours(new Date("2026-09-14T16:00:00Z"), quiet, IST)).toBe(true);
+    expect(isWithinQuietHours(new Date("2026-09-14T16:00:00Z"), quiet, "UTC")).toBe(false);
+    // 03:00 UTC is 08:30 in India: the school day. UTC called it quiet.
+    expect(isWithinQuietHours(new Date("2026-09-15T03:00:00Z"), quiet, IST)).toBe(false);
+    expect(isWithinQuietHours(new Date("2026-09-15T03:00:00Z"), quiet, "UTC")).toBe(true);
+  });
+
+  it("releases a held message at 07:00 India time", () => {
+    // 21:30 IST on the 14th → 07:00 IST on the 15th = 01:30 UTC.
+    expect(nextSendableAt(new Date("2026-09-14T16:00:00Z"), quiet, IST).toISOString()).toBe("2026-09-15T01:30:00.000Z");
+    // 02:00 IST (20:30 UTC the day before) → the same morning's 07:00.
+    expect(nextSendableAt(new Date("2026-09-14T20:30:00Z"), quiet, IST).toISOString()).toBe("2026-09-15T01:30:00.000Z");
+  });
+
+  it("rounds to the minute so a held message never lands a few seconds early", () => {
+    expect(nextSendableAt(new Date("2026-09-14T22:30:45Z"), quiet).toISOString()).toBe("2026-09-15T07:00:00.000Z");
+  });
+});

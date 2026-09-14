@@ -10,6 +10,7 @@ import {
   type LifecycleAction,
 } from "@/modules/sis/lifecycle";
 import type { StudentInput } from "@/modules/sis/schemas";
+import { emit } from "@/modules/automation/emit";
 
 /**
  * Student service. Authorization is the caller's job (page/action layer runs
@@ -298,6 +299,22 @@ export async function applyLifecycleAction(studentId: string, input: LifecycleIn
     },
     after: { status: to, section: sectionLabel, ...(input.note ? { note: input.note } : {}) },
   });
+
+  // The automation trigger "a student is enrolled" was offered in the rule
+  // form from the start and never fired, because nothing emitted it.
+  if (input.action === "enroll") {
+    const section = sectionId ? await db.section.findUnique({ where: { id: sectionId }, include: { grade: true } }) : null;
+    await emit(
+      "student.enrolled",
+      {
+        "student.name": `${student.firstName} ${student.lastName}`,
+        "student.grade": section?.grade.name ?? null,
+        "student.section": section?.name ?? null,
+        "student.admissionNumber": student.admissionNumber,
+      },
+      { organizationId: actor.organizationId, studentId },
+    );
+  }
 
   return updated;
 }

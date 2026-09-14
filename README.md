@@ -353,6 +353,41 @@ before this touches anything real.
     a rule can never roll back the payment that triggered it. Gated by
     `automation.rules`. Code in `src/modules/automation/`.
 
+21. **Scheduler — working.** A tick, not a daemon: something outside the app
+    (a platform cron, a systemd timer, or `npm run scheduler`) calls
+    `/api/cron/tick` every minute with `Authorization: Bearer $CRON_SECRET`,
+    and each tick runs whichever jobs are due. That shape survives every way
+    the app can be deployed — a timer inside a web process runs once per
+    instance, which for "text every family whose fee is due" is exactly the
+    wrong number of times. The endpoint fails closed without a 32+ character
+    secret. Two jobs:
+    - **Deliver held messages** (every 5 minutes) — the queue worker Connect
+      always assumed and never had. Messages held back by quiet hours now
+      carry a `notBefore` and are sent when it passes; broadcasts scheduled by
+      a person, or deferred by quiet hours, go out at their time. Each message
+      is claimed with a conditional update before it is sent, so two runners
+      can't both send it.
+    - **Date-based automation rules** (hourly) — "3 days before an invoice
+      falls due", "7 days after, if still unpaid", "a library book is 3 days
+      overdue". Each (rule, invoice) is recorded under a unique key BEFORE
+      the message goes, so an hourly re-run — or two overlapping runners —
+      acts once, never twice. An overdue rule looks back at most three days
+      past its line, so creating one never texts every family with last
+      year's debt at once.
+
+    A lease row taken by conditional update keeps one runner per job across
+    instances; `/automation/scheduler` shows whether the scheduler is actually
+    ticking (and says so loudly when it has never run), lets an administrator
+    run a job for their own school, and itemises only that school's runs.
+    Along the way: quiet hours are now read on the campus clock
+    (`Branch.timezone`) instead of UTC, scheduled broadcast times are the
+    campus wall-clock time that was typed, "notify me" notifies the rule's
+    author rather than whoever triggered the event, and four triggers the
+    rule form had always offered — enrolment, invoice raised, absence, leave
+    approved — are finally emitted. Code in `src/modules/scheduler/`,
+    `src/modules/automation/scheduled.service.ts`,
+    `src/modules/connect/deferred.service.ts`.
+
 ## Known limitations / follow-ups
 
 - **Phase 9 is a responsive web portal, not native apps.** There is no React
@@ -367,12 +402,18 @@ before this touches anything real.
   invite flow, no email verification, no self-service password reset and no
   OTP. `Guardian.userId` and `Student.userId` are set directly; a real
   deployment needs an onboarding path before any of this reaches a family.
-- **Automation has no scheduler and no approval actions.** Date-based
-  triggers ("three days before a due date") need a job runner, which is not
-  built, and the only actions are notifications — it cannot assign a task,
-  update a field or call a webhook. The per-module approvals (student leave,
-  staff leave, refunds, admissions, payroll, report cards) remain separate
-  implementations, which is the §12 gap still open.
+- **Automation's only actions are notifications.** It cannot assign a task,
+  update a field or call a webhook, and date-based triggers cover invoices
+  and library loans only (no "assignment due tomorrow" yet). The per-module
+  approvals (student leave, staff leave, refunds, admissions, payroll, report
+  cards) remain separate implementations, which is the §12 gap still open.
+- **Scheduled work is at-most-once, by choice.** A runner that dies between
+  claiming a message (or a rule's invoice) and sending it loses that one
+  message rather than risking a duplicate; the delivery log shows it as
+  QUEUED with no send time. There is no retry or dead-letter queue, and a
+  provider outage during a tick fails those messages rather than holding
+  them. The scheduler only runs if something calls `/api/cron/tick` — see
+  the operations runbook.
 - **Report cards sum exam and coursework marks rather than weighting them.**
   A weighting ("exams are 70%") is school policy, and inventing one would put
   a number on a report card that no teacher chose. Summing both totals is the
@@ -426,17 +467,19 @@ before this touches anything real.
   quiet hours, rendering, logging, audit) is real. A live gateway means
   implementing `MessageProvider` and returning it from `getProvider`;
   nothing above that file changes.
-- **Sending is synchronous and unqueued.** Blueprint §13 wants queue workers
-  so a school action never blocks on a provider; today a broadcast loops
-  in-request, which is fine for a class and wrong for 4,000 guardians.
-  Scheduled broadcasts and quiet-hours deferrals are *recorded* with a send
-  time but nothing sweeps them — that sweeper is the same missing worker.
-  Retries and dead-lettering likewise.
+- **An immediate send still happens in the request.** Held and scheduled
+  messages are swept by the scheduler, but pressing Send on a broadcast loops
+  over its audience in-request — fine for a class, wrong for 4,000
+  guardians. Moving that onto the scheduler (or a real queue) is the next
+  step; retries and dead-lettering likewise.
 - **OTP and WhatsApp templates still aren't real.** Phase 3's public form
   wants OTP; both need a live provider plus (for WhatsApp) template
   pre-approval by Meta.
-- **Quiet hours are UTC.** `Branch.timezone` exists and isn't consulted yet;
-  a school in IST setting 21:00 is currently setting 21:00 UTC.
+- **Quiet hours are one window per organization, read on each campus's
+  clock.** A group whose campuses keep different hours can't set different
+  windows per campus. Exam start times are still entered and shown in UTC
+  (the exam form says so); only Connect and the scheduler use
+  `Branch.timezone` so far.
 - **Phase 10+ tables have no RBAC permissions yet.** `src/lib/permissions.ts`
   lists foundation, SIS, Academics, Admissions, Finance, LMS, Connect, HR
   and Operations modules. Adding a module's permissions belongs with the

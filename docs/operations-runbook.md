@@ -19,6 +19,8 @@ holds real school data.
 | AI cost | `/ai/usage` | tokens per capability |
 | Failed sign-ins | `AuditEvent` where `action = 'user.login_failed'` | investigate a burst against one address |
 | Throttled sign-ins | `AuditEvent` where `action = 'auth.rate_limited'` | a burst on one email is an attack in progress |
+| Scheduler heartbeat | `/automation/scheduler`, or the newest `JobRun` with `trigger = 'SCHEDULE'` | a run at least every 5 minutes; the page turns red after 15 |
+| Failed jobs | `JobRun` where `status = 'FAILED'` | none; an `Abandoned` error means a runner died mid-job |
 
 `/api/health` is unauthenticated by necessity, so it deliberately returns
 nothing but a status and a latency — no version, no migration state, no
@@ -181,3 +183,54 @@ against WCAG AA.
 5. To take a module out of service for one organization, switch its feature
    flag off in `/settings` — it is one row and it takes effect on the next
    request.
+6. If families report reminders or morning messages not arriving, open
+   `/automation/scheduler` first: a scheduler that has stopped ticking looks
+   exactly like "the messages are broken".
+
+---
+
+## 8. Scheduler
+
+Nothing time-based happens unless something calls the tick endpoint: held
+messages stay held, scheduled broadcasts never go, date-based reminders never
+fire. **Setting this up is part of deploying, not an optional extra.**
+
+**Configure the secret** (32+ characters; the endpoint refuses every call
+without one):
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# → set CRON_SECRET in the environment of every app instance
+```
+
+**Drive it — pick ONE:**
+
+| Where it runs | How |
+| --- | --- |
+| Vercel | a Cron Job hitting `GET /api/cron/tick` every minute; Vercel sends `Authorization: Bearer $CRON_SECRET` itself |
+| Kubernetes / Render / Railway | a scheduled job running `curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/tick` every minute |
+| A VM | `npm run scheduler` under systemd (reads `.env`; set `SCHEDULER_URL`) |
+
+Running two drivers by mistake is safe — a lease keeps one runner per job,
+and every job claims its work before acting — but it is wasteful.
+
+**Check it**
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/tick
+# {"status":"ok","jobs":[{"key":"connect.deferred_delivery","status":"succeeded",...}, ...]}
+# "not_due" is normal between intervals; "busy" means another runner holds the job.
+```
+
+**A job is stuck "running".** A runner died mid-job (deploy, OOM). Its lease
+expires after 10 minutes and the next run marks the old row FAILED with
+"Abandoned". Nothing to do by hand; do not delete `JobLease` rows while a run
+may be in progress.
+
+**Delivery semantics — know these before promising a school anything.**
+Scheduled work is at-most-once: a crash between claiming a message and
+sending it loses that one message (it stays `QUEUED` with no `notBefore` in
+the delivery log) rather than risking a duplicate. There are no retries.
+
+**NOT READY:** no alert fires when the heartbeat goes late — the page shows
+it, but nobody is paged. Wire an uptime check to the newest `JobRun`.

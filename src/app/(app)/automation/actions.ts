@@ -7,7 +7,7 @@ import { actorOf, requireAutomationAccessForAction, str } from "@/modules/sis/ac
 import type { FormState } from "@/modules/sis/form-state";
 import { fieldErrors } from "@/modules/sis/schemas";
 import { SisError } from "@/modules/sis/students.service";
-import { EVENT_KINDS, OPERATORS, type Condition, type EventKind, type Operator } from "@/modules/automation/rules";
+import { EVENT_KINDS, OPERATORS, validateOffset, type Condition, type EventKind, type Operator } from "@/modules/automation/rules";
 import { createRule, deleteRule, setRuleActive } from "@/modules/automation/automation.service";
 
 function toFormState(error: unknown): FormState {
@@ -33,6 +33,9 @@ export async function createRuleAction(_prev: FormState, formData: FormData): Pr
       .safeParse(values(formData));
     if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
 
+    const offset = validateOffset(parsed.data.eventKind, str(formData, "offsetDays"));
+    if (!offset.ok) return { fieldErrors: { offsetDays: offset.message } };
+
     // Up to three condition rows; blanks are dropped so a rule with no
     // conditions ("every time this happens") is expressible.
     const conditions: Condition[] = [];
@@ -52,6 +55,7 @@ export async function createRuleAction(_prev: FormState, formData: FormData): Pr
         conditions,
         action: parsed.data.action,
         messageBody: parsed.data.messageBody,
+        offsetDays: offset.offsetDays,
       },
       access.ctx.organizationId,
       actorOf(access),

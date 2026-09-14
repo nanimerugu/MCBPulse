@@ -5,6 +5,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import type { InvoiceStatus } from "@/generated/prisma/enums";
 import { computeInvoice, deriveStatus, formatDocumentNumber, fromMinor, toMinor } from "@/modules/finance/money";
 import { SisError, type Actor } from "@/modules/sis/students.service";
+import { emit } from "@/modules/automation/emit";
 
 export const INVOICE_PAGE_SIZE = 50;
 
@@ -48,7 +49,7 @@ export function decorate(invoice: InvoiceWithDetails, today = new Date()) {
  */
 export async function raiseInvoice(studentId: string, feeStructureId: string, dueDateISO: string, actor: Actor) {
   const [student, structure] = await Promise.all([
-    db.student.findFirst({ where: { id: studentId, organizationId: actor.organizationId, deletedAt: null } }),
+    db.student.findFirst({ where: { id: studentId, organizationId: actor.organizationId, deletedAt: null }, include: { currentSection: { include: { grade: true } } } }),
     db.feeStructure.findFirst({
       where: { id: feeStructureId, deletedAt: null, branch: { organizationId: actor.organizationId } },
       include: { lines: { include: { feeHead: true } }, academicYear: true },
@@ -105,6 +106,17 @@ export async function raiseInvoice(studentId: string, feeStructureId: string, du
           dueDate: dueDateISO,
         },
       });
+      // Offered as a trigger since automation shipped; emitted from now on.
+      await emit(
+        "invoice.raised",
+        {
+          "invoice.number": invoiceNumber,
+          "invoice.amount": calc.totalMinor / 100,
+          "student.name": `${student.firstName} ${student.lastName}`,
+          "student.grade": student.currentSection?.grade.name ?? null,
+        },
+        { organizationId: actor.organizationId, studentId },
+      );
       return { invoice, created: true };
     } catch (e) {
       if (!isUniqueViolation(e)) throw e; // another writer took this number; try the next

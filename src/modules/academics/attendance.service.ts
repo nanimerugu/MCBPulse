@@ -5,6 +5,7 @@ import type { AttendanceStatus } from "@/generated/prisma/enums";
 import { defaultStatus, summarize, summarizeByStudent, type AttendanceCounts } from "@/modules/academics/attendance-summary";
 import { approvedLeaveOn } from "@/modules/academics/leave.service";
 import { notifyAbsences } from "@/modules/connect/notify";
+import { emit } from "@/modules/automation/emit";
 import { todaysSlotsForStaff } from "@/modules/academics/timetable.service";
 import { SisError, type Actor } from "@/modules/sis/students.service";
 
@@ -155,6 +156,16 @@ export async function saveRegister(
         absentIds.map((studentId) => ({ studentId, dateISO })),
         { organizationId: actor.organizationId, branchId: opts.branchId, branchName: branch?.name ?? "School" },
       );
+
+      // Same first-save-only rule for automations as for the built-in notice.
+      const absent = await db.student.findMany({ where: { id: { in: absentIds } }, select: { id: true, firstName: true, lastName: true } });
+      for (const s of absent) {
+        await emit(
+          "attendance.absent",
+          { "student.name": `${s.firstName} ${s.lastName}`, "student.grade": section.grade.name, "student.section": section.name, "attendance.date": dateISO },
+          { organizationId: actor.organizationId, studentId: s.id },
+        );
+      }
     }
   }
 

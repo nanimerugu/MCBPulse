@@ -11,27 +11,38 @@
  * TRIGGER → CONDITIONS → ACTION, so a school can say "when a payment is
  * received, text the family" without anyone writing code.
  *
+ * Two kinds of trigger:
+ *   - IMMEDIATE: something happened ("a payment is received"). The module
+ *     that did it calls `emit()` once, after committing.
+ *   - SCHEDULED: a date came round ("3 days before an invoice falls due").
+ *     Nothing happens at that moment for a module to emit, so the scheduler
+ *     looks for them every hour (src/modules/automation/scheduled.service.ts).
+ *
  * The honest boundary is in the README, and the engine's page says the same.
  */
 
-export type EventKind =
-  | "student.enrolled"
-  | "invoice.raised"
-  | "payment.received"
-  | "attendance.absent"
-  | "leave.approved"
-  | "clinic.visit"
-  | "library.overdue";
+export type ImmediateEventKind = "student.enrolled" | "invoice.raised" | "payment.received" | "attendance.absent" | "leave.approved" | "clinic.visit";
 
-export const EVENT_KINDS: EventKind[] = [
+export type ScheduledEventKind = "invoice.due_soon" | "invoice.overdue" | "library.overdue";
+
+export type EventKind = ImmediateEventKind | ScheduledEventKind;
+
+export const IMMEDIATE_EVENT_KINDS: ImmediateEventKind[] = [
   "student.enrolled",
   "invoice.raised",
   "payment.received",
   "attendance.absent",
   "leave.approved",
   "clinic.visit",
-  "library.overdue",
 ];
+
+export const SCHEDULED_EVENT_KINDS: ScheduledEventKind[] = ["invoice.due_soon", "invoice.overdue", "library.overdue"];
+
+export const EVENT_KINDS: EventKind[] = [...IMMEDIATE_EVENT_KINDS, ...SCHEDULED_EVENT_KINDS];
+
+export function isScheduledKind(kind: string): kind is ScheduledEventKind {
+  return (SCHEDULED_EVENT_KINDS as string[]).includes(kind);
+}
 
 export const EVENT_LABELS: Record<EventKind, string> = {
   "student.enrolled": "A student is enrolled",
@@ -40,7 +51,9 @@ export const EVENT_LABELS: Record<EventKind, string> = {
   "attendance.absent": "A student is marked absent",
   "leave.approved": "Leave is approved",
   "clinic.visit": "A student visits the infirmary",
-  "library.overdue": "A library book becomes overdue",
+  "invoice.due_soon": "Days before an invoice falls due",
+  "invoice.overdue": "Days after an invoice falls due, still unpaid",
+  "library.overdue": "Days a library book is overdue",
 };
 
 /**
@@ -118,7 +131,9 @@ export const EVENT_FIELDS: Record<EventKind, string[]> = {
   "attendance.absent": ["student.name", "student.grade", "student.section", "attendance.date"],
   "leave.approved": ["student.name", "leave.days", "leave.reason"],
   "clinic.visit": ["student.name", "clinic.outcome", "clinic.complaint"],
-  "library.overdue": ["book.title", "borrower.name", "loan.daysOverdue"],
+  "invoice.due_soon": ["invoice.number", "invoice.outstanding", "invoice.dueDate", "student.name", "student.grade", "days"],
+  "invoice.overdue": ["invoice.number", "invoice.outstanding", "invoice.dueDate", "student.name", "student.grade", "days"],
+  "library.overdue": ["book.title", "borrower.name", "borrower.kind", "loan.dueDate", "loan.daysOverdue"],
 };
 
 /**
@@ -141,4 +156,76 @@ export function renderMessage(body: string, facts: EventFacts): { text: string; 
 
 export function fieldsFor(kind: string): string[] {
   return EVENT_FIELDS[kind as EventKind] ?? [];
+}
+
+// --- Date-based triggers ------------------------------------------------------
+
+export const OFFSET_LIMITS: Record<ScheduledEventKind, { min: number; max: number; fallback: number }> = {
+  "invoice.due_soon": { min: 1, max: 60, fallback: 3 },
+  "invoice.overdue": { min: 1, max: 180, fallback: 7 },
+  "library.overdue": { min: 1, max: 90, fallback: 3 },
+};
+
+/**
+ * How far back a scheduled rule may reach for something it missed.
+ *
+ * Without a limit, creating "remind families 7 days after the due date"
+ * would message every family with a debt from last year the first time the
+ * scheduler ran — hundreds of texts, most about invoices the office is
+ * already chasing by phone. With it, a rule acts on invoices that crossed
+ * its line in the last few days: enough to ride out a scheduler that was
+ * down over a weekend, not enough to become a mass mailing.
+ */
+export const CATCH_UP_DAYS = 3;
+
+/**
+ * Does this subject fall inside the rule's window today?
+ *
+ * `dayDelta` is measured on the school's calendar: days UNTIL the due date
+ * for `invoice.due_soon`, days PAST it for the overdue kinds.
+ *
+ * "Due soon" fires anywhere from N days out to the due date itself, so an
+ * invoice raised two days before it is due still gets its reminder (and the
+ * `days` fact says 2, not 3). "Overdue" fires from day N to day N+3 only —
+ * see CATCH_UP_DAYS for why it must not reach further.
+ */
+export function scheduledWindowHit(kind: ScheduledEventKind, offsetDays: number, dayDelta: number): boolean {
+  if (kind === "invoice.due_soon") return dayDelta >= 0 && dayDelta <= offsetDays;
+  return dayDelta >= offsetDays && dayDelta <= offsetDays + CATCH_UP_DAYS;
+}
+
+/** Older rules saved before offsets existed get their kind's sensible default. */
+export function effectiveOffset(kind: ScheduledEventKind, offsetDays: number | null): number {
+  return offsetDays ?? OFFSET_LIMITS[kind].fallback;
+}
+
+export type OffsetCheck = { ok: true; offsetDays: number | null } | { ok: false; message: string };
+
+/** A date-based rule needs its number of days; an immediate one must not carry one. */
+export function validateOffset(kind: string, raw: string | undefined): OffsetCheck {
+  if (!isScheduledKind(kind)) return { ok: true, offsetDays: null };
+  const limits = OFFSET_LIMITS[kind];
+  const trimmed = (raw ?? "").trim();
+  if (trimmed === "") return { ok: false, message: "Say how many days — this trigger runs on a date" };
+  const n = Number(trimmed);
+  if (!Number.isInteger(n) || n < limits.min || n > limits.max) {
+    return { ok: false, message: `Days must be a whole number from ${limits.min} to ${limits.max}` };
+  }
+  return { ok: true, offsetDays: n };
+}
+
+const plural = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
+
+/** The trigger as a sentence, for the rule list. */
+export function describeTrigger(kind: string, offsetDays: number | null): string {
+  switch (kind) {
+    case "invoice.due_soon":
+      return `${plural(effectiveOffset(kind, offsetDays))} before an invoice falls due`;
+    case "invoice.overdue":
+      return `${plural(effectiveOffset(kind, offsetDays))} after an invoice falls due, if still unpaid`;
+    case "library.overdue":
+      return `A library book is ${plural(effectiveOffset(kind, offsetDays))} overdue`;
+    default:
+      return EVENT_LABELS[kind as EventKind] ?? kind;
+  }
 }

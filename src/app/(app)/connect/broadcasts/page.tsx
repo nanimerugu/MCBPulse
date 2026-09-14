@@ -119,7 +119,7 @@ export default async function BroadcastsPage({
               <Field label="Subject (email only)" htmlFor="b-subject">
                 <Input id="b-subject" name="subject" />
               </Field>
-              <Field label="Schedule for (optional)" htmlFor="b-scheduled">
+              <Field label="Schedule for (optional)" htmlFor="b-scheduled" hint="On this campus&apos;s clock. The scheduler sends it at that time.">
                 <Input id="b-scheduled" name="scheduledAt" type="datetime-local" />
               </Field>
             </div>

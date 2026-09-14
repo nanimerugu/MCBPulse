@@ -1,4 +1,5 @@
 import type { MessageChannel } from "@/generated/prisma/enums";
+import { minutesOfDay } from "@/lib/time-zone";
 
 /**
  * Who may be contacted, on which channel, and when (blueprint section 13:
@@ -82,27 +83,37 @@ export interface QuietHours {
  * Quiet hours are a school's promise not to text parents at 3am. A window
  * whose end is before its start wraps midnight (21:00–07:00), which is the
  * common case and the one a naive `start <= t && t < end` gets wrong.
+ *
+ * The window is read on the SCHOOL'S clock. It used to be read in UTC, which
+ * put an Indian school's "21:00–07:00" at 02:30–12:30 local time — silencing
+ * the school morning and texting families at 9pm. The zone defaults to UTC
+ * only so the pure tests can state their instants plainly; every caller in
+ * the application passes the branch's zone.
  */
-export function isWithinQuietHours(at: Date, quiet: QuietHours | null): boolean {
+export function isWithinQuietHours(at: Date, quiet: QuietHours | null, timeZone = "UTC"): boolean {
   if (!quiet) return false;
   const start = toMinutes(quiet.start);
   const end = toMinutes(quiet.end);
   if (start === null || end === null) return false;
-  const t = at.getUTCHours() * 60 + at.getUTCMinutes();
+  const t = minutesOfDay(at, timeZone);
   return start <= end ? t >= start && t < end : t >= start || t < end;
 }
 
-/** The first moment at or after `at` that isn't inside quiet hours. */
-export function nextSendableAt(at: Date, quiet: QuietHours | null): Date {
-  if (!isWithinQuietHours(at, quiet) || !quiet) return at;
+/**
+ * The first moment at or after `at` that isn't inside quiet hours.
+ *
+ * Counted as minutes forward to the end of the window rather than by
+ * setting the hour on a Date, so it works on any clock without having to
+ * know the zone's offset. (Across a daylight-saving change it can land an
+ * hour off; for the zones this runs in there is none.)
+ */
+export function nextSendableAt(at: Date, quiet: QuietHours | null, timeZone = "UTC"): Date {
+  if (!quiet || !isWithinQuietHours(at, quiet, timeZone)) return at;
   const end = toMinutes(quiet.end);
   if (end === null) return at;
-  const out = new Date(at);
-  out.setUTCSeconds(0, 0);
-  out.setUTCHours(Math.floor(end / 60), end % 60);
-  // Wrapped window and we're still in the late-evening part: the window ends tomorrow.
-  if (out.getTime() <= at.getTime()) out.setUTCDate(out.getUTCDate() + 1);
-  return out;
+  const minutesToEnd = (end - minutesOfDay(at, timeZone) + 1440) % 1440;
+  const startOfMinute = Math.floor(at.getTime() / 60_000) * 60_000;
+  return new Date(startOfMinute + minutesToEnd * 60_000);
 }
 
 export const CHANNEL_LABELS: Record<MessageChannel, string> = {

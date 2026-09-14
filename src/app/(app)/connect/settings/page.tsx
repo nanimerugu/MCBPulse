@@ -6,6 +6,7 @@ import { ActionForm } from "@/components/action-form";
 import { AccessDenied } from "@/components/sis/access-denied";
 import { loadConnectAccess, param } from "@/modules/sis/access";
 import { fullName } from "@/modules/sis/labels";
+import { branchTimeZone } from "@/modules/connect/quiet-hours";
 import { setOptOutAction, setQuietHoursAction } from "@/app/(app)/connect/actions";
 
 export default async function ConnectSettingsPage({
@@ -25,7 +26,7 @@ export default async function ConnectSettingsPage({
   }
   const { viewer, ctx } = result.access;
 
-  const [org, guardians, canConfigure] = await Promise.all([
+  const [org, guardians, canConfigure, tz] = await Promise.all([
     db.organization.findUnique({ where: { id: ctx.organizationId }, select: { quietHoursStart: true, quietHoursEnd: true } }),
     db.guardian.findMany({
       where: { deletedAt: null, studentLinks: { some: { student: { organizationId: ctx.organizationId, branchId: ctx.branch.id, deletedAt: null } } } },
@@ -34,6 +35,7 @@ export default async function ConnectSettingsPage({
       take: 100,
     }),
     authorize(viewer.userId, "connect.settings", "configure", { organizationId: ctx.organizationId, branchId: ctx.branch.id }),
+    branchTimeZone(ctx.branch.id),
   ]);
 
   return (
@@ -42,8 +44,9 @@ export default async function ConnectSettingsPage({
 
       <Card title="Quiet hours">
         <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
-          The school&apos;s promise not to contact families outside these hours. A send inside the window is held and scheduled for the next sendable moment
-          rather than blocked. A window whose end is before its start wraps midnight (21:00–07:00). Times are UTC for now.
+          The school&apos;s promise not to contact families outside these hours. A send inside the window is held, and the scheduler sends it when the
+          window closes. A window whose end is before its start wraps midnight (21:00–07:00). Times are read on each campus&apos;s own clock —{" "}
+          {ctx.branch.name} is on <span className="font-mono">{tz}</span>.
         </p>
         {canConfigure ? (
           <ActionForm action={setQuietHoursAction} hidden={{ branchId: ctx.branch.id }} submitLabel="Save quiet hours" inline>

@@ -1,10 +1,21 @@
+import { withBranch } from "@/lib/branch-context";
 import { heldPermissionKeys } from "@/lib/rbac";
-import { Badge, Card, EmptyState, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
+import { Badge, Card, EmptyState, Field, Input, LinkButton, PageHeader, Select, Textarea } from "@/components/ui";
 import { ActionForm } from "@/components/action-form";
 import { AccessDenied } from "@/components/sis/access-denied";
 import { loadAutomationAccess, param } from "@/modules/sis/access";
 import { listRules } from "@/modules/automation/automation.service";
-import { EVENT_FIELDS, EVENT_KINDS, EVENT_LABELS, OPERATORS, OPERATOR_LABELS, type Condition } from "@/modules/automation/rules";
+import {
+  describeTrigger,
+  EVENT_FIELDS,
+  EVENT_LABELS,
+  IMMEDIATE_EVENT_KINDS,
+  isScheduledKind,
+  OPERATORS,
+  OPERATOR_LABELS,
+  SCHEDULED_EVENT_KINDS,
+  type Condition,
+} from "@/modules/automation/rules";
 import { formatDate } from "@/modules/sis/labels";
 import { createRuleAction, deleteRuleAction, setRuleActiveAction } from "@/app/(app)/automation/actions";
 
@@ -32,15 +43,22 @@ export default async function AutomationPage({
 
   return (
     <div className="flex max-w-4xl flex-col gap-6">
-      <PageHeader title="Automation" description="When something happens, and a condition holds, send a message." />
+      <PageHeader
+        title="Automation"
+        description="When something happens — or a date comes round — and a condition holds, send a message."
+        actions={<LinkButton href={withBranch("/automation/scheduler", ctx)}>Scheduler</LinkButton>}
+      />
 
       <div className="rounded-md border border-zinc-300 bg-zinc-50 px-4 py-3 text-sm dark:border-zinc-700 dark:bg-zinc-900">
         <p className="font-medium text-zinc-900 dark:text-zinc-100">What this does and doesn&apos;t cover</p>
         <p className="mt-1 text-zinc-600 dark:text-zinc-400">
           This is the <strong>trigger → condition → action</strong> half of the blueprint&apos;s workflow engine. It does <strong>not</strong>{" "}
           replace the approvals already built into student leave, staff leave, refunds, admissions, payroll and report cards — rewriting six
-          working approval flows to gain uniformity nobody has asked for would risk all six. Date-based triggers (&quot;three days before a
-          due date&quot;) need a scheduler, which isn&apos;t built.
+          working approval flows to gain uniformity nobody has asked for would risk all six. Date-based triggers run on the{" "}
+          <a className="underline" href={withBranch("/automation/scheduler", ctx)}>
+            scheduler
+          </a>
+          , which acts on each invoice or loan at most once per rule.
         </p>
       </div>
 
@@ -49,16 +67,28 @@ export default async function AutomationPage({
           <ActionForm action={createRuleAction} hidden={hidden} submitLabel="Create rule">
             <div className="flex flex-wrap gap-3">
               <Field label="Name" htmlFor="ar-name">
-                <Input id="ar-name" name="name" required maxLength={80} placeholder="Thank families for large payments" />
+                <Input id="ar-name" name="name" required maxLength={80} placeholder="Remind families before fees fall due" />
               </Field>
               <Field label="When" htmlFor="ar-event">
-                <Select id="ar-event" name="eventKind" defaultValue={EVENT_KINDS[0]}>
-                  {EVENT_KINDS.map((k) => (
-                    <option key={k} value={k}>
-                      {EVENT_LABELS[k]}
-                    </option>
-                  ))}
+                <Select id="ar-event" name="eventKind" defaultValue={IMMEDIATE_EVENT_KINDS[0]}>
+                  <optgroup label="When something happens">
+                    {IMMEDIATE_EVENT_KINDS.map((k) => (
+                      <option key={k} value={k}>
+                        {EVENT_LABELS[k]}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="On a date (needs a number of days)">
+                    {SCHEDULED_EVENT_KINDS.map((k) => (
+                      <option key={k} value={k}>
+                        {EVENT_LABELS[k]}
+                      </option>
+                    ))}
+                  </optgroup>
                 </Select>
+              </Field>
+              <Field label="Days" htmlFor="ar-days" hint="Date-based triggers only">
+                <Input id="ar-days" name="offsetDays" type="number" min={1} max={180} placeholder="3" className="!w-24" />
               </Field>
               <Field label="Then" htmlFor="ar-action">
                 <Select id="ar-action" name="action" defaultValue="NOTIFY_GUARDIANS">
@@ -99,8 +129,18 @@ export default async function AutomationPage({
             </fieldset>
 
             <Field label="Message" htmlFor="ar-body" hint="Use {{field}} placeholders — an unknown one is left visible so a broken rule looks broken.">
-              <Textarea id="ar-body" name="messageBody" rows={2} required maxLength={1000} placeholder="Thank you — we received {{payment.amount}} for {{student.name}}." />
+              <Textarea
+                id="ar-body"
+                name="messageBody"
+                rows={2}
+                required
+                maxLength={1000}
+                placeholder="Reminder: {{invoice.outstanding}} for {{student.name}} is due on {{invoice.dueDate}}."
+              />
             </Field>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              &quot;Notify me&quot; notifies you, the person creating the rule — not whoever happens to trigger it.
+            </p>
           </ActionForm>
         </Card>
       ) : null}
@@ -117,14 +157,21 @@ export default async function AutomationPage({
                 <li key={r.id} className="py-3 text-sm">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                      <p className="font-medium text-zinc-900 dark:text-zinc-50">{r.name}</p>
+                      <p className="font-medium text-zinc-900 dark:text-zinc-50">
+                        {r.name}
+                        {isScheduledKind(r.eventKind) ? (
+                          <span className="ml-2 align-middle">
+                            <Badge tone="blue">date-based</Badge>
+                          </span>
+                        ) : null}
+                      </p>
                       <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                        {EVENT_LABELS[r.eventKind as keyof typeof EVENT_LABELS] ?? r.eventKind}
+                        {describeTrigger(r.eventKind, r.offsetDays)}
                         {conditions.length > 0
                           ? ` · only when ${conditions.map((c) => `${c.field} ${OPERATOR_LABELS[c.operator]} ${c.value}`).join(" and ")}`
                           : " · every time"}
                         {" · "}
-                        {r.action === "NOTIFY_GUARDIANS" ? "message the guardians" : "notify in the app"}
+                        {r.action === "NOTIFY_GUARDIANS" ? "message the guardians" : "notify the rule's author in the app"}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -154,7 +201,8 @@ export default async function AutomationPage({
         )}
         <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
           Every evaluation is recorded, matched or not, so &quot;why didn&apos;t my rule fire?&quot; has an answer. A rule that throws never
-          rolls back the payment or the register that triggered it.
+          rolls back the payment or the register that triggered it. An overdue rule looks back no more than three days past its line, so
+          creating one never messages every family with an old debt at once.
         </p>
       </Card>
     </div>

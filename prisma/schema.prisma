@@ -88,6 +88,7 @@ model Organization {
   gradingScales         GradingScale[]
   automationRules       AutomationRule[]
   aiGenerations         AiGeneration[]
+  jobRuns               JobRun[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -132,6 +133,7 @@ model Branch {
   canteenItems   CanteenItem[]
   visitorLogs    VisitorLog[]
   clinicVisits   ClinicVisit[]
+  broadcasts     Broadcast[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2047,6 +2049,13 @@ model Broadcast {
   templateId     String?
   template       MessageTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
 
+  // The branch it was written for. The audience is resolved against a
+  // branch at send time, and a scheduled send happens with nobody signed in
+  // to supply one — so it has to be remembered. Null only on broadcasts
+  // created before the scheduler existed.
+  branchId String?
+  branch   Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
   channel     MessageChannel
   audience    Json // the segment definition — resolved to recipients at send time
   scheduledAt DateTime?
@@ -2096,11 +2105,17 @@ model Message {
   failureReason     String?
   attempts          Int           @default(0)
   sentAt            DateTime?
+  // Set ONLY on a message held back by quiet hours: the moment it may go.
+  // The scheduler sends QUEUED messages whose notBefore has passed and
+  // clears it as it claims them. A message sent inline never has one, so the
+  // worker can never pick up — and double-send — a message mid-send.
+  notBefore         DateTime?
 
   createdAt DateTime @default(now())
 
   @@index([organizationId, status])
   @@index([organizationId, createdAt])
+  @@index([status, notBefore])
 }
 
 model Notification {
@@ -2400,6 +2415,11 @@ model AutomationRule {
   /** Message body with {{fact}} placeholders. */
   messageBody String
   active      Boolean @default(true)
+  /**
+   * Date-based triggers only ("3 days before an invoice is due"). Null for
+   * rules that fire when something happens.
+   */
+  offsetDays  Int?
 
   runs AutomationRun[]
 
@@ -2428,8 +2448,65 @@ model AutomationRun {
   /** The facts the rule was evaluated against. */
   facts   Json
   detail  String?
+  /**
+   * Date-based rules are re-evaluated every hour, so "once per invoice" has
+   * to be enforced by the database rather than remembered: the scheduler
+   * inserts this row BEFORE sending, and a second insert for the same
+   * (rule, subject) fails on this unique key instead of texting a family
+   * twice. Null for event-triggered runs, which happen once by construction.
+   */
+  dedupeKey String? @unique
 
   createdAt DateTime @default(now())
 
   @@index([ruleId, createdAt])
+}
+
+// --- Scheduler ---------------------------------------------------------------
+
+enum JobTrigger {
+  SCHEDULE
+  MANUAL
+}
+
+enum JobRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+/**
+ * One execution of a background job (src/modules/scheduler/jobs.ts). A
+ * platform tick runs a job for every organization and has a null
+ * organizationId; an administrator's "run now" is confined to their own.
+ */
+model JobRun {
+  id             String        @id @default(uuid())
+  jobKey         String
+  trigger        JobTrigger
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  triggeredByUserId String?
+
+  status  JobRunStatus @default(RUNNING)
+  /** Counts only — never names, numbers or message text. */
+  summary Json?
+  error   String?
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([jobKey, organizationId, startedAt])
+}
+
+/**
+ * At most one runner per job at a time, across every app instance. Taken
+ * with a conditional UPDATE (`leasedUntil < now`), so two ticks that arrive
+ * together can't both win; the expiry means a crashed runner can't hold it
+ * forever.
+ */
+model JobLease {
+  jobKey      String   @id
+  holder      String
+  leasedUntil DateTime
 }

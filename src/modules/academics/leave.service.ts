@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
 import type { LeaveInput } from "@/modules/academics/schemas";
 import { SisError, type Actor } from "@/modules/sis/students.service";
+import { emit } from "@/modules/automation/emit";
 
 function toUtcDate(iso: string) {
   return new Date(`${iso}T00:00:00.000Z`);
@@ -56,6 +57,20 @@ export async function decideStudentLeave(leaveId: string, decision: "APPROVED" |
     resourceId: leave.studentId,
     after: { leaveId, from: leave.fromDate.toISOString().slice(0, 10), to: leave.toDate.toISOString().slice(0, 10) },
   });
+
+  if (decision === "APPROVED") {
+    const student = await db.student.findUnique({ where: { id: leave.studentId }, select: { firstName: true, lastName: true } });
+    await emit(
+      "leave.approved",
+      {
+        "student.name": student ? `${student.firstName} ${student.lastName}` : null,
+        // Inclusive: leave from Monday to Monday is one day, not zero.
+        "leave.days": Math.round((leave.toDate.getTime() - leave.fromDate.getTime()) / 86_400_000) + 1,
+        "leave.reason": leave.reason,
+      },
+      { organizationId: actor.organizationId, studentId: leave.studentId },
+    );
+  }
 
   return updated;
 }

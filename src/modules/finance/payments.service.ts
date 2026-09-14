@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
-import { emit } from "@/modules/automation/automation.service";
+import { emit } from "@/modules/automation/emit";
 import type { PaymentMethod } from "@/generated/prisma/enums";
 import { formatDocumentNumber, formatMoney, fromMinor, paymentPosting, persistedStatus, refundPosting, toMinor } from "@/modules/finance/money";
 import { paidMinorOf } from "@/modules/finance/invoices.service";
@@ -97,7 +97,7 @@ export async function recordPayment(
       "invoice.number": invoice.invoiceNumber,
       "student.name": `${invoice.student.firstName} ${invoice.student.lastName}`,
     },
-    { organizationId: actor.organizationId, studentId: invoice.studentId, userId: actor.userId },
+    { organizationId: actor.organizationId, studentId: invoice.studentId },
   );
 
   return result;

@@ -7,12 +7,13 @@ import {
   unreachedWarning,
   type GuardianNotifyOutcome,
   isWithinQuietHours,
+  nextSendableAt,
   planDelivery,
   SUPPRESSION_LABELS,
-  type QuietHours,
   type Recipient,
 } from "@/modules/connect/delivery-policy";
 import { getProvider } from "@/modules/connect/providers";
+import { quietHoursFor } from "@/modules/connect/quiet-hours";
 import { render } from "@/modules/connect/templates";
 
 /**
@@ -27,12 +28,6 @@ import { render } from "@/modules/connect/templates";
 
 const ABSENCE_BODY =
   "{{school.name}}: {{student.first_name}} ({{student.section}}) was marked absent on {{attendance.date}}. Please contact the school if this is unexpected.";
-
-async function quietHoursOf(organizationId: string): Promise<QuietHours | null> {
-  const org = await db.organization.findUnique({ where: { id: organizationId }, select: { quietHoursStart: true, quietHoursEnd: true } });
-  if (!org?.quietHoursStart || !org?.quietHoursEnd) return null;
-  return { start: org.quietHoursStart, end: org.quietHoursEnd };
-}
 
 export interface AbsenceNotice {
   studentId: string;
@@ -85,8 +80,13 @@ export async function notifyAbsences(
     // per-pair basis and keep the pairing.
     const plan = planDelivery(recipients.map((r) => ({ ...r, address: `${r.address}#${r.key}` })));
 
-    const quiet = await quietHoursOf(scope.organizationId);
-    const quietNow = isWithinQuietHours(new Date(), quiet);
+    const { quiet, timeZone } = await quietHoursFor(scope.organizationId, scope.branchId);
+    const now = new Date();
+    const quietNow = isWithinQuietHours(now, quiet, timeZone);
+    // A held message records when it may go, and the scheduler's
+    // deferred-delivery job sends it then. Before the scheduler existed a
+    // held message simply stayed QUEUED forever.
+    const holdUntil = quietNow ? nextSendableAt(now, quiet, timeZone) : null;
     const provider = getProvider(channel);
 
     let queued = 0;
@@ -113,11 +113,12 @@ export async function notifyAbsences(
           body: text,
           status: "QUEUED",
           provider: provider.name,
+          notBefore: holdUntil,
         },
       });
       queued++;
 
-      if (quietNow) continue; // left QUEUED for the worker / next send window
+      if (quietNow) continue; // held — the scheduler sends it at notBefore
 
       try {
         const result = await provider.send({ channel, to: address, subject: null, body: text });
@@ -193,8 +194,16 @@ export async function notifyStudentGuardians(
       })),
     );
 
-    const quiet = opts.urgent ? null : await quietHoursOf(scope.organizationId);
-    const quietNow = isWithinQuietHours(new Date(), quiet);
+    let quietNow = false;
+    let holdUntil: Date | null = null;
+    if (!opts.urgent) {
+      // Read on the clock of the child's own campus.
+      const now = new Date();
+      const student = await db.student.findFirst({ where: { id: studentId, organizationId: scope.organizationId }, select: { branchId: true } });
+      const { quiet, timeZone } = await quietHoursFor(scope.organizationId, student?.branchId);
+      quietNow = isWithinQuietHours(now, quiet, timeZone);
+      holdUntil = quietNow ? nextSendableAt(now, quiet, timeZone) : null;
+    }
 
     let queued = 0;
     let sent = 0;
@@ -208,10 +217,11 @@ export async function notifyStudentGuardians(
           body,
           status: "QUEUED",
           provider: provider.name,
+          notBefore: holdUntil,
         },
       });
       queued++;
-      if (quietNow) continue;
+      if (quietNow) continue; // held — the scheduler sends it at notBefore
 
       try {
         const result = await provider.send({ channel, to: planned.address, subject: null, body });

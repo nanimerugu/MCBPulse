@@ -10,6 +10,8 @@ import { AUDIENCE_LABELS, parseAudience } from "@/modules/connect/audience";
 import { CHANNEL_LABELS } from "@/modules/connect/delivery-policy";
 import { smsSegments } from "@/modules/connect/templates";
 import { formatDate } from "@/modules/sis/labels";
+import { formatWallClock } from "@/lib/time-zone";
+import { branchTimeZone } from "@/modules/connect/quiet-hours";
 import { sendBroadcastAction } from "@/app/(app)/connect/actions";
 
 export default async function BroadcastPage({
@@ -43,9 +45,10 @@ export default async function BroadcastPage({
   };
 
   const alreadySent = broadcast.status === "SENT" || broadcast.status === "SENDING";
-  const [preview, canSend] = await Promise.all([
+  const [preview, canSend, tz] = await Promise.all([
     alreadySent ? Promise.resolve(null) : previewBroadcast(id, scope).catch(() => null),
     authorize(viewer.userId, "connect.broadcasts", "message", { organizationId: ctx.organizationId, branchId: ctx.branch.id }),
+    branchTimeZone(broadcast.branchId ?? ctx.branch.id),
   ]);
 
   const spec = parseAudience(broadcast.audience);
@@ -61,7 +64,11 @@ export default async function BroadcastPage({
             </Badge>
             <span>{CHANNEL_LABELS[broadcast.channel]}</span>
             <span>· {spec ? AUDIENCE_LABELS[spec.kind] : "unreadable audience"}</span>
-            {broadcast.scheduledAt ? <span>· scheduled {formatDate(broadcast.scheduledAt)}</span> : null}
+            {broadcast.scheduledAt ? (
+              <span>
+                · {broadcast.status === "SCHEDULED" ? "goes out automatically at" : "scheduled"} {formatWallClock(broadcast.scheduledAt, tz)} ({tz})
+              </span>
+            ) : null}
             {broadcast.sentAt ? <span>· sent {formatDate(broadcast.sentAt)}</span> : null}
           </span>
         }
@@ -83,7 +90,10 @@ export default async function BroadcastPage({
             items={[
               { label: "Will send to", value: `${preview.willSend} recipient${preview.willSend === 1 ? "" : "s"}` },
               { label: "Suppressed", value: preview.suppressed.length },
-              { label: "Quiet hours now", value: preview.quietHoursNow ? `Yes — would defer to ${preview.deferUntil?.toISOString().slice(0, 16).replace("T", " ")} UTC` : "No" },
+              {
+                label: "Quiet hours now",
+                value: preview.quietHoursNow && preview.deferUntil ? `Yes — would be held until ${formatWallClock(preview.deferUntil, tz)} (${tz}) and sent then` : "No",
+              },
               { label: "Provider", value: preview.providerDelivers ? "Live" : "Recorded only (not delivered)" },
             ]}
           />

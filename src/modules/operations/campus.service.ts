@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
 import type { ClinicOutcome, VisitorKind } from "@/generated/prisma/enums";
 import { notifyStudentGuardians, unreachedWarning, type GuardianNotifyOutcome } from "@/modules/connect/notify";
-import { emit } from "@/modules/automation/automation.service";
+import { emit } from "@/modules/automation/emit";
 import { SisError, type Actor } from "@/modules/sis/students.service";
 import type { OpsScope } from "@/modules/operations/library.service";
 
@@ -174,7 +174,7 @@ export async function recordClinicVisit(
       "clinic.outcome": input.outcome,
       "clinic.complaint": input.complaint,
     },
-    { organizationId: scope.organizationId, studentId: input.studentId, userId: actor.userId },
+    { organizationId: scope.organizationId, studentId: input.studentId },
   );
 
   return { visit, notified, unreached };

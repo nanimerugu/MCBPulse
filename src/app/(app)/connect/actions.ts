@@ -11,6 +11,8 @@ import { fieldErrors } from "@/modules/sis/schemas";
 import { SisError } from "@/modules/sis/students.service";
 import { parseAudience } from "@/modules/connect/audience";
 import { createBroadcast, sendBroadcast, setGuardianOptOut, setQuietHours, type BroadcastScope } from "@/modules/connect/broadcasts.service";
+import { branchTimeZone } from "@/modules/connect/quiet-hours";
+import { formatWallClock } from "@/lib/time-zone";
 import { createTemplate, updateTemplate } from "@/modules/connect/templates.service";
 
 function toFormState(error: unknown): FormState {
@@ -122,7 +124,8 @@ export async function sendBroadcastAction(broadcastId: string, _prev: FormState,
     revalidatePath("/connect/delivery");
     revalidatePath("/connect");
     if (outcome.deferredTo) {
-      return { success: `Held for quiet hours — scheduled for ${outcome.deferredTo.toISOString().slice(0, 16).replace("T", " ")} UTC` };
+      const tz = await branchTimeZone(access.ctx.branch.id);
+      return { success: `Held for quiet hours — it will go out automatically at ${formatWallClock(outcome.deferredTo, tz)} (${tz})` };
     }
     return {
       success: `Recorded ${outcome.sent} message${outcome.sent === 1 ? "" : "s"}${outcome.failed ? `, ${outcome.failed} failed` : ""}${outcome.suppressed ? `, ${outcome.suppressed} suppressed` : ""}`,
