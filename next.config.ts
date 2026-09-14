@@ -52,6 +52,28 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // Removes the `X-Powered-By: Next.js` version banner.
   poweredByHeader: false,
+  /**
+   * The file-storage adapter reads and writes a path computed at runtime
+   * (src/modules/files/storage.ts), which Next's tracer cannot follow. Left
+   * alone it gives up and traces the ENTIRE project into the server output —
+   * including `public/`, every source file and the whole of node_modules.
+   *
+   * These exclusions keep that from shipping things the server has no use
+   * for. The uploads directory itself is excluded too: it is data, and on a
+   * real deployment it lives on a volume or in object storage, never inside
+   * the build.
+   */
+  outputFileTracingExcludes: {
+    "**/*": [
+      "./.storage/**",
+      "./.git/**",
+      "./docs/**",
+      "./prisma/migrations/**",
+      "./node_modules/@swc/core-linux-x64-gnu/**",
+      "./node_modules/@swc/core-linux-x64-musl/**",
+      "./node_modules/@esbuild/**",
+    ],
+  },
   turbopack: {
     // An unrelated package-lock.json in the user's home directory (a parent
     // of this project) otherwise makes Turbopack guess that as the

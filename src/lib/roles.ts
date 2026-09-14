@@ -5,7 +5,7 @@
  *
  * Grants accrue phase by phase: Phase 0 (foundation), Phase 1 (SIS), Phase 2
  * (Academics), Phase 3 (Admissions), Phase 4 (Finance), Phase 5 (LMS),
- * Phase 6 (Connect), Phase 7 (HR), Phase 8 (Operations), Phase 9 (portal), Phase 10 (AI), Phase 11 (Analytics), Examcell. Roles whose modules haven't been built yet (Librarian,
+ * Phase 6 (Connect), Phase 7 (HR), Phase 8 (Operations), Phase 9 (portal), Phase 10 (AI), Phase 11 (Analytics), Examcell, Files. Roles whose modules haven't been built yet (Librarian,
  * Transport Manager, ...) still have view-only or empty grants.
  *
  * Teacher and Class Teacher are SECTION-SCOPED roles (see
@@ -215,6 +215,9 @@ const OPS_VISITORS = ["ops.visitors:view", "ops.visitors:edit"];
 const OPS_INFIRMARY = ["ops.infirmary:view", "ops.infirmary:edit"];
 const OPS_ALL = [...OPS_LIBRARY, ...OPS_INVENTORY, ...OPS_TRANSPORT, ...OPS_HOSTEL, ...OPS_VISITORS, ...OPS_INFIRMARY];
 /** Leadership sees how the campus is running without operating it. */
+const FILES_ALL = ["files.assets:view", "files.assets:create", "files.assets:delete"];
+const FILES_CONTRIBUTOR = ["files.assets:view", "files.assets:create"];
+
 const EXAMS_ALL = ["exams.banks:view", "exams.banks:create", "exams.banks:edit", "exams.exams:view", "exams.exams:create", "exams.exams:publish", "exams.exams:edit"];
 /** A teacher writes questions, builds papers and marks; publishing is theirs too, scoped to their sections. */
 const EXAMS_TEACHER = EXAMS_ALL;
@@ -234,13 +237,13 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     key: "platform_admin",
     name: "Platform Admin",
     description: "SaaS operations: all tenants, billing, feature flags",
-    permissions: [...FOUNDATION_ALL, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL, ...OPS_ALL, ...AI_ALL, ...ANALYTICS_ALL, ...EXAMS_ALL],
+    permissions: [...FOUNDATION_ALL, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL, ...OPS_ALL, ...AI_ALL, ...ANALYTICS_ALL, ...EXAMS_ALL, ...FILES_ALL],
   },
   {
     key: "organization_admin",
     name: "Organization Admin",
     description: "Trust/group administration across all branches",
-    permissions: [...ORG_ADMIN_SET, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL, ...OPS_ALL, ...AI_ALL, ...ANALYTICS_ALL, ...EXAMS_ALL],
+    permissions: [...ORG_ADMIN_SET, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL, ...OPS_ALL, ...AI_ALL, ...ANALYTICS_ALL, ...EXAMS_ALL, ...FILES_ALL],
   },
   {
     key: "principal",
@@ -272,6 +275,7 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       ...AI_ALL,
       ...ANALYTICS_ALL,
       ...EXAMS_ALL,
+      ...FILES_ALL,
     ],
   },
   {
@@ -314,6 +318,7 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       "sis.guardians:delete",
       ...ACADEMICS_READ,
       ...ADMISSIONS_COUNSELOR,
+      ...FILES_CONTRIBUTOR,
       ...FINANCE_CASHIER,
       ...LMS_READ,
       ...CONNECT_SENDER,
@@ -321,13 +326,14 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       "ops.library:view",
       "ai.console:view",
       ...EXAMS_TEACHER,
+      ...FILES_CONTRIBUTOR,
     ],
   },
   {
     key: "teacher",
     name: "Teacher",
     description: "Teaching and assessment for assigned classes/subjects",
-    permissions: ["sis.students:view", "sis.guardians:view", "academics.structure:view", ...TEACHER_ACADEMICS, ...LMS_TEACHER, ...HR_SELF, "ai.console:view", ...EXAMS_TEACHER],
+    permissions: ["sis.students:view", "sis.guardians:view", "academics.structure:view", ...TEACHER_ACADEMICS, ...LMS_TEACHER, ...HR_SELF, "ai.console:view", ...EXAMS_TEACHER, ...FILES_CONTRIBUTOR],
   },
   {
     key: "class_teacher",
@@ -361,7 +367,17 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     key: "counselor",
     name: "Counselor / Admission Agent",
     description: "Lead conversion, admissions CRM",
-    permissions: ["sis.students:view", "sis.students:create", "sis.guardians:view", "sis.guardians:create", "academics.structure:view", ...ADMISSIONS_COUNSELOR],
+    // Files: a counselor collects application documents, so uploading is
+    // their job; archiving someone else's file is not.
+    permissions: [
+      "sis.students:view",
+      "sis.students:create",
+      "sis.guardians:view",
+      "sis.guardians:create",
+      "academics.structure:view",
+      ...ADMISSIONS_COUNSELOR,
+      ...FILES_CONTRIBUTOR,
+    ],
   },
   {
     key: "parent",

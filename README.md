@@ -284,6 +284,19 @@ before this touches anything real.
 | Mobile-first portal shell, and a staff sidebar that becomes a drawer below `sm` with no client JS | [`src/app/portal/layout.tsx`](src/app/portal/layout.tsx), [`src/components/app-shell.tsx`](src/components/app-shell.tsx) |
 | **Schema only:** canonical data model for the Phase 10+ domains (part of 75 tables / 32 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
 
+15. **Files — working.** A storage adapter that actually stores: uploads are
+    validated against an ALLOW-list of formats a school needs (HTML, SVG and
+    scripts are refused — served from this origin they would run as the
+    viewer), the browser-supplied MIME type must agree with the extension,
+    filenames are sanitised to labels and never become paths, and the storage
+    key is server-generated from a UUID. Bytes live outside the web root,
+    every read verifies the SHA-256 recorded at upload, and every download
+    goes out as `application/octet-stream` with `Content-Disposition:
+    attachment` and nosniff. Identical bytes are de-duplicated; archiving is
+    a soft delete because a document attached to an application is evidence.
+    Gated by `files.storage` and 3 `files.*` permissions. Code in
+    `src/modules/files/`.
+
 ## Known limitations / follow-ups
 
 - **Phase 9 is a responsive web portal, not native apps.** There is no React

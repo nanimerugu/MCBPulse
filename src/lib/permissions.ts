@@ -235,6 +235,11 @@ export const PERMISSIONS: PermissionDef[] = [
   { module: "exams.exams", action: "create", description: "Schedule an exam and build its paper" },
   { module: "exams.exams", action: "publish", description: "Publish an exam to a section" },
   { module: "exams.exams", action: "edit", description: "Record and mark attempts" },
+
+  // --- Files ---------------------------------------------------------------
+  { module: "files.assets", action: "view", description: "Browse and download files" },
+  { module: "files.assets", action: "create", description: "Upload a file" },
+  { module: "files.assets", action: "delete", description: "Archive a file" },
 ];
 
 export function permissionKey(module: string, action: Action): string {

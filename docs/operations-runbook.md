@@ -144,6 +144,12 @@ Known and deliberate:
   outcome is unknown risks charging someone twice, which is worse than a
   500 the user can refresh past.
 
+**Build note:** the file-storage adapter reads a path computed at runtime,
+so `next build` warns that it cannot trace it and would otherwise bundle the
+whole project into the server output. `outputFileTracingExcludes` in
+`next.config.ts` caps that. The warning itself is expected and will persist
+until uploads move to object storage, where there is no local path to trace.
+
 **NOT READY:** no load test has been run, no query has been profiled against
 a realistic dataset, and the N+1 risk in the cross-module dashboard has not
 been measured. The figures are correct; their cost at 10,000 students is

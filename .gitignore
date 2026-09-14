@@ -36,3 +36,6 @@ next-env.d.ts
 
 # prisma
 /src/generated/prisma
+
+# Uploaded files (local storage adapter). Never in the repo, never in public/.
+.storage/

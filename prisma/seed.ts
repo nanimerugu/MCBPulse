@@ -764,6 +764,11 @@ async function main() {
     update: { defaultEnabled: true },
   });
   await db.featureFlag.upsert({
+    where: { key: "files.storage" },
+    create: { key: "files.storage", description: "Files: upload, download and attach documents", defaultEnabled: true },
+    update: { defaultEnabled: true },
+  });
+  await db.featureFlag.upsert({
     where: { key: "exams.examcell" },
     create: { key: "exams.examcell", description: "Examcell: question banks, paper generation, exams and attempts", defaultEnabled: true },
     update: { defaultEnabled: true },
