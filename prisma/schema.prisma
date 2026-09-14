@@ -47,6 +47,12 @@ model Organization {
   slug   String             @unique
   status OrganizationStatus @default(TRIAL)
 
+  // Quiet hours: the school's promise not to text parents at 3am
+  // (blueprint section 13). "HH:mm" in the branch's local reckoning; a
+  // window whose end precedes its start wraps midnight. Null = no window.
+  quietHoursStart String?
+  quietHoursEnd   String?
+
   branches        Branch[]
   roles           Role[]
   roleAssignments RoleAssignment[]
@@ -480,6 +486,12 @@ model Guardian {
   phone      String
   email      String?
   occupation String?
+
+  // Per-channel consent (blueprint section 13). Opting out suppresses
+  // delivery and is reported to the sender rather than silently dropping
+  // the message.
+  optOutSms   Boolean @default(false)
+  optOutEmail Boolean @default(false)
 
   studentLinks StudentGuardian[]
 
@@ -1709,6 +1721,16 @@ model Broadcast {
   scheduledAt DateTime?
   status      BroadcastStatus @default(DRAFT)
 
+  // The body as authored (template variables still in it). Rendering
+  // happens per recipient at send time, so each Message keeps what that
+  // person actually received.
+  subject String?
+  body    String
+
+  createdByUserId  String
+  approvedByUserId String?
+  sentAt           DateTime?
+
   messages Message[]
 
   createdAt DateTime @default(now())
@@ -1729,17 +1751,25 @@ model Message {
   broadcastId    String?
   broadcast      Broadcast?   @relation(fields: [broadcastId], references: [id], onDelete: SetNull)
 
-  channel           MessageChannel
-  recipientUserId   String?
-  recipientAddress  String // phone / email / device token, per channel
-  status            MessageStatus  @default(QUEUED)
+  channel          MessageChannel
+  recipientUserId  String?
+  recipientName    String?
+  recipientAddress String // phone / email / device token, per channel
+  // What this person actually received, after rendering. Kept per message
+  // because a delivery log that can't show the text isn't much of a log.
+  body             String?
+
+  status            MessageStatus @default(QUEUED)
+  provider          String?
   providerMessageId String?
   failureReason     String?
+  attempts          Int           @default(0)
   sentAt            DateTime?
 
   createdAt DateTime @default(now())
 
   @@index([organizationId, status])
+  @@index([organizationId, createdAt])
 }
 
 model Notification {

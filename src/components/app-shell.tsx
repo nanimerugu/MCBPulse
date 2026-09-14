@@ -3,11 +3,12 @@ import { SignOutButton } from "@/components/sign-out-button";
 
 /**
  * The global navigation from the blueprint's information architecture
- * (docs/architecture-blueprint-raw.md, section 23). An item is live only when
- * its phase has shipped AND its feature flag is on for this organization;
- * everything else is a disabled placeholder labeled by the phase that builds
- * it — visible so the shape of the product is clear, disabled so nobody
- * mistakes it for working.
+ * (docs/architecture-blueprint-raw.md, section 23). An item is live only
+ * when three things hold: its phase has shipped, its feature flag is on for
+ * this organization, and the viewer holds the permission that opens it.
+ * Everything else is a disabled placeholder labelled by the phase that
+ * builds it — visible so the shape of the product is clear, disabled so
+ * nobody mistakes it for working.
  */
 interface NavItem {
   label: string;
@@ -15,17 +16,19 @@ interface NavItem {
   comingInPhase?: string;
   /** Feature-flag key gating a shipped item. */
   flag?: string;
+  /** Permission that opens it; without this the item is hidden entirely. */
+  permission?: string;
 }
 
 const NAV_SECTIONS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard" },
-  { label: "Students", href: "/students", flag: "phase1.sis" },
-  { label: "Staff", href: "/staff", flag: "phase1.sis" },
-  { label: "Academics", href: "/academics", flag: "phase2.academics" },
-  { label: "Admissions", href: "/admissions", flag: "phase3.admissions" },
-  { label: "Finance", href: "/finance", flag: "phase4.finance" },
-  { label: "LMS", href: "/lms", flag: "phase5.lms" },
-  { label: "Communication", comingInPhase: "Phase 6" },
+  { label: "Students", href: "/students", flag: "phase1.sis", permission: "sis.students:view" },
+  { label: "Staff", href: "/staff", flag: "phase1.sis", permission: "sis.staff:view" },
+  { label: "Academics", href: "/academics", flag: "phase2.academics", permission: "academics.timetable:view" },
+  { label: "Admissions", href: "/admissions", flag: "phase3.admissions", permission: "admissions.leads:view" },
+  { label: "Finance", href: "/finance", flag: "phase4.finance", permission: "finance.invoices:view" },
+  { label: "LMS", href: "/lms", flag: "phase5.lms", permission: "lms.assignments:view" },
+  { label: "Communication", href: "/connect", flag: "phase6.connect", permission: "connect.broadcasts:view" },
   { label: "HR", comingInPhase: "Phase 7" },
   { label: "Operations", comingInPhase: "Phase 8" },
   { label: "Reports & Analytics", comingInPhase: "Phase 11" },
@@ -37,11 +40,13 @@ export function AppShell({
   organizationName,
   userName,
   enabledFlags,
+  permissions,
 }: {
   children: React.ReactNode;
   organizationName: string | null;
   userName: string;
   enabledFlags: ReadonlySet<string>;
+  permissions: ReadonlySet<string>;
 }) {
   return (
     <div className="flex min-h-screen flex-1">
@@ -52,18 +57,23 @@ export function AppShell({
         </div>
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
           {NAV_SECTIONS.map((item) => {
-            const live = item.href && (!item.flag || enabledFlags.has(item.flag));
-            if (live) {
+            const flagOn = !item.flag || enabledFlags.has(item.flag);
+            const permitted = !item.permission || permissions.has(item.permission);
+            // Shipped, switched on, but not for this person: say nothing at all.
+            if (item.href && flagOn && !permitted) return null;
+
+            if (item.href && flagOn) {
               return (
                 <Link
                   key={item.label}
-                  href={item.href!}
+                  href={item.href}
                   className="rounded-md px-3 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-200/60 dark:text-zinc-200 dark:hover:bg-zinc-800"
                 >
                   {item.label}
                 </Link>
               );
             }
+
             const tag = item.flag ? "Off" : item.comingInPhase;
             const title = item.flag ? `Feature flag ${item.flag} is off for this organization` : `Arrives in ${item.comingInPhase}`;
             return (

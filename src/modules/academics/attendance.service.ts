@@ -4,6 +4,7 @@ import { recordAuditEvent } from "@/lib/audit";
 import type { AttendanceStatus } from "@/generated/prisma/enums";
 import { defaultStatus, summarize, summarizeByStudent, type AttendanceCounts } from "@/modules/academics/attendance-summary";
 import { approvedLeaveOn } from "@/modules/academics/leave.service";
+import { notifyAbsences } from "@/modules/connect/notify";
 import { todaysSlotsForStaff } from "@/modules/academics/timetable.service";
 import { SisError, type Actor } from "@/modules/sis/students.service";
 
@@ -141,6 +142,21 @@ export async function saveRegister(
     }
     return { session: existing, created: false, changed };
   });
+
+  // Tell guardians about absences (blueprint 11.3). Only on the first save
+  // — a correction shouldn't re-notify a parent who was already told — and
+  // deliberately not awaited into the transaction: a messaging failure must
+  // not undo a saved register.
+  if (result.created) {
+    const absentIds = marks.filter((m) => m.status === "ABSENT").map((m) => m.studentId);
+    if (absentIds.length > 0) {
+      const branch = await db.branch.findUnique({ where: { id: opts.branchId }, select: { name: true } });
+      await notifyAbsences(
+        absentIds.map((studentId) => ({ studentId, dateISO })),
+        { organizationId: actor.organizationId, branchId: opts.branchId, branchName: branch?.name ?? "School" },
+      );
+    }
+  }
 
   const counts = summarize(marks.map((m) => m.status));
   await recordAuditEvent({

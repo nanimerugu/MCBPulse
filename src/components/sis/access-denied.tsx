@@ -7,6 +7,7 @@ const FLAG_NAMES: Record<string, string> = {
   "phase3.admissions": "Admissions",
   "phase4.finance": "Finance",
   "phase5.lms": "Learning management",
+  "phase6.connect": "Communication",
 };
 
 /** Renders the reason a module page couldn't load, in words the person can act on. */

@@ -148,6 +148,21 @@ export const PERMISSIONS: PermissionDef[] = [
   { module: "lms.grades", action: "view", description: "View submissions and the gradebook" },
   { module: "lms.grades", action: "edit", description: "Record submissions, marks and feedback" },
   { module: "lms.grades", action: "export", description: "Export the gradebook as CSV" },
+
+  // --- Phase 6: Connect -----------------------------------------------------
+  { module: "connect.templates", action: "view", description: "View message templates" },
+  { module: "connect.templates", action: "create", description: "Create a message template" },
+  { module: "connect.templates", action: "edit", description: "Edit a message template" },
+
+  { module: "connect.broadcasts", action: "view", description: "View broadcasts and their audiences" },
+  { module: "connect.broadcasts", action: "create", description: "Draft a broadcast" },
+  { module: "connect.broadcasts", action: "message", description: "Send a broadcast to its audience" },
+
+  { module: "connect.delivery", action: "view", description: "View the delivery log" },
+  { module: "connect.delivery", action: "export", description: "Export the delivery log" },
+
+  { module: "connect.settings", action: "view", description: "View quiet hours and consent settings" },
+  { module: "connect.settings", action: "configure", description: "Set quiet hours and guardian opt-outs" },
 ];
 
 export function permissionKey(module: string, action: Action): string {

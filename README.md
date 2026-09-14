@@ -70,10 +70,20 @@ phase gets its own schema slice and its own pass, not one giant change.
    counts graded work only. Gated by `phase5.lms` and 10 `lms.*` permissions,
    and section-scoped for teachers by the Phase 2 attribute policy. Code in
    `src/modules/lms/` and `src/app/(app)/lms/`.
-7. **Phase 6+ — schema only.** Examcell (question banks, papers, online
+7. **Phase 6 (Connect) — working, with one caveat below.** The Notification
+   Service from §13: a **provider abstraction**, a template engine whose
+   variables come from a fixed allow-list, audience segmentation resolved at
+   send time, per-recipient rendering, consent/opt-out, quiet hours, and a
+   delivery log holding what each person actually received. Absence
+   notifications fire automatically when a register is first saved.
+   **Caveat: no delivery provider is configured, so messages are recorded,
+   not delivered** — see below. Gated by `phase6.connect` and 10
+   `connect.*` permissions. Code in `src/modules/connect/` and
+   `src/app/(app)/connect/`.
+8. **Phase 7+ — schema only.** Examcell (question banks, papers, online
    exam attempts) and the rest of blueprint section 8 (HR, Operations,
-   Communication, Files, AI) exist in `prisma/schema.prisma` and migrate
-   cleanly. **No route or business logic touches any of it yet.**
+   Files, AI) exist in `prisma/schema.prisma` and migrate cleanly. **No
+   route or business logic touches any of it yet.**
 
 ## Stack
 
@@ -168,7 +178,11 @@ before this touches anything real.
 | Double-entry ledger and trial balance | [`src/modules/finance/ledger.service.ts`](src/modules/finance/ledger.service.ts) |
 | Grading rules: derived submission status, late detection, mark validation, graded-only averaging (pure, tested) | [`src/modules/lms/grading.ts`](src/modules/lms/grading.ts) |
 | Grading roster: whole-class rows, validate-all-before-writing-any, per-submission optimistic lock | [`src/modules/lms/assignments.service.ts`](src/modules/lms/assignments.service.ts) |
-| **Schema only:** canonical data model for the Phase 6+ domains (part of 72 tables / 29 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
+| Template engine: fixed variable allow-list, no property traversal, unknown variables rejected at save (pure, tested) | [`src/modules/connect/templates.ts`](src/modules/connect/templates.ts) |
+| Delivery policy: consent, de-duplication, midnight-wrapping quiet hours (pure, tested) | [`src/modules/connect/delivery-policy.ts`](src/modules/connect/delivery-policy.ts) |
+| Provider abstraction — swap the recording adapter for a real gateway here | [`src/modules/connect/providers.ts`](src/modules/connect/providers.ts) |
+| Internal notify API other modules call; never throws into its caller | [`src/modules/connect/notify.ts`](src/modules/connect/notify.ts) |
+| **Schema only:** canonical data model for the Phase 7+ domains (part of 72 tables / 29 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
 
 ## Known limitations / follow-ups
 
@@ -183,9 +197,28 @@ before this touches anything real.
   did *not* emit that DROP — live-DB introspection skips indexes it can't
   represent — but `migrate dev`'s shadow-replay path may still differ, so
   the check stands.)
-- **Phase 6+ tables have no RBAC permissions yet.** `src/lib/permissions.ts`
-  lists foundation, SIS, Academics, Admissions, Finance and LMS modules.
-  Adding a module's permissions belongs with the code that first checks them.
+- **Connect records messages; it does not deliver them.** The only shipped
+  adapter writes each message to the delivery log marked `recorded` and
+  returns success — deliberately labelled so a dev run can never be mistaken
+  for messages parents received. Everything upstream (audience, consent,
+  quiet hours, rendering, logging, audit) is real. A live gateway means
+  implementing `MessageProvider` and returning it from `getProvider`;
+  nothing above that file changes.
+- **Sending is synchronous and unqueued.** Blueprint §13 wants queue workers
+  so a school action never blocks on a provider; today a broadcast loops
+  in-request, which is fine for a class and wrong for 4,000 guardians.
+  Scheduled broadcasts and quiet-hours deferrals are *recorded* with a send
+  time but nothing sweeps them — that sweeper is the same missing worker.
+  Retries and dead-lettering likewise.
+- **OTP and WhatsApp templates still aren't real.** Phase 3's public form
+  wants OTP; both need a live provider plus (for WhatsApp) template
+  pre-approval by Meta.
+- **Quiet hours are UTC.** `Branch.timezone` exists and isn't consulted yet;
+  a school in IST setting 21:00 is currently setting 21:00 UTC.
+- **Phase 7+ tables have no RBAC permissions yet.** `src/lib/permissions.ts`
+  lists foundation, SIS, Academics, Admissions, Finance, LMS and Connect
+  modules. Adding a module's permissions belongs with the code that first
+  checks them.
 - **Students don't submit their own work.** Teachers record submissions and
   marks, which matches how offline work actually arrives and how §10.3
   describes the teacher's day. A student-facing portal needs student logins

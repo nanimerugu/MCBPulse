@@ -96,6 +96,23 @@ export async function authorize(
   return (await resolveAccess(userId, module, action, scope)).allowed;
 }
 
+/**
+ * Every permission key the user holds anywhere in this organization, as one
+ * query. For deciding what to *show* — navigation, mainly — where asking
+ * `authorize()` per module would mean a query per item on every render.
+ * Not a substitute for authorize(): it ignores branch/year scope, so the
+ * page itself still checks properly before showing anything real.
+ */
+export async function heldPermissionKeys(userId: string, organizationId: string): Promise<Set<string>> {
+  const assignments = await db.roleAssignment.findMany({
+    where: { userId, organizationId, revokedAt: null },
+    select: { role: { select: { rolePermissions: { select: { permission: { select: { key: true } } } } } } },
+  });
+  const keys = new Set<string>();
+  for (const a of assignments) for (const rp of a.role.rolePermissions) keys.add(rp.permission.key);
+  return keys;
+}
+
 /** Throws ForbiddenError instead of returning false — for route/action guards. */
 export async function requirePermission(
   userId: string,

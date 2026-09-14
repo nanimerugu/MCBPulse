@@ -436,6 +436,19 @@ async function main() {
     });
   }
 
+  console.log("Seeding demo Connect...");
+  // Quiet hours so the policy is visible and testable out of the box.
+  await db.organization.update({ where: { id: org.id }, data: { quietHoursStart: "21:00", quietHoursEnd: "07:00" } });
+  for (const [name, channel, body] of [
+    ["Absence notice", "SMS", "{{school.name}}: {{student.first_name}} ({{student.section}}) was marked absent on {{attendance.date}}. Please contact the school if this is unexpected."],
+    ["Fee reminder", "SMS", "{{school.name}}: invoice {{invoice.number}} for {{student.full_name}} has {{invoice.outstanding}} due by {{invoice.due_date}}."],
+    ["PTM invitation", "EMAIL", "Dear {{guardian.name}}, you are invited to the parent-teacher meeting for {{student.full_name}} ({{student.section}}) at {{school.name}}."],
+  ] as const) {
+    if (!(await db.messageTemplate.findFirst({ where: { organizationId: org.id, name, deletedAt: null } }))) {
+      await db.messageTemplate.create({ data: { organizationId: org.id, name, channel, body } });
+    }
+  }
+
   console.log("Seeding feature flags...");
   // Phase 1 shipped, so SIS defaults on. An organization can still switch it
   // off with a FeatureFlagOverride — that's what the flag is for.
@@ -462,6 +475,11 @@ async function main() {
   await db.featureFlag.upsert({
     where: { key: "phase5.lms" },
     create: { key: "phase5.lms", description: "Learning: courses, assignments, grading, gradebook (Phase 5)", defaultEnabled: true },
+    update: { defaultEnabled: true },
+  });
+  await db.featureFlag.upsert({
+    where: { key: "phase6.connect" },
+    create: { key: "phase6.connect", description: "Connect: templates, broadcasts, delivery log, quiet hours (Phase 6)", defaultEnabled: true },
     update: { defaultEnabled: true },
   });
   await db.featureFlag.upsert({
