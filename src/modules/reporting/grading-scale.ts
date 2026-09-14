@@ -78,14 +78,11 @@ export interface SubjectMarks {
 }
 
 /**
- * A subject's percentage from whatever evidence exists.
- *
- * Exams and assignments are summed together rather than weighted, and that
- * is a DECISION, not an oversight: a weighting ("exams are 70%") is school
- * policy, and inventing one would put a number on a report card that no
- * teacher chose. Summing both totals is the one combination that needs no
- * policy. A school wanting weights needs them configured, which is named in
- * the README.
+ * A subject's percentage with marks ADDED TOGETHER — the scale-has-no-weights
+ * case. Report generation goes through `subjectResult` in weighting.ts, which
+ * uses this rule when a scale carries no weighting and blends component
+ * percentages when it does. A weighting is school policy, so it is only ever
+ * applied when a school has configured one on its scale.
  */
 export function subjectPercent(marks: SubjectMarks): number | null {
   const awarded = (marks.examMarks ?? 0) + (marks.assignmentMarks ?? 0);

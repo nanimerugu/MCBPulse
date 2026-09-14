@@ -2,7 +2,8 @@ import "server-only";
 import { db } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
 import { summarize } from "@/modules/academics/attendance-summary";
-import { bandFor, checkScale, DEFAULT_BANDS, describeBandProblem, overallPercent, subjectPercent, type Band, type SubjectMarks } from "@/modules/reporting/grading-scale";
+import { bandFor, checkScale, DEFAULT_BANDS, describeBandProblem, type Band } from "@/modules/reporting/grading-scale";
+import { overallResult, subjectResult, weightsOf, type Weights } from "@/modules/reporting/weighting";
 import { SisError, type Actor } from "@/modules/sis/students.service";
 
 export interface ReportScope {
@@ -30,9 +31,10 @@ export async function defaultScale(organizationId: string) {
   );
 }
 
-export async function createScale(input: { name: string; bands: Band[]; isDefault: boolean }, scope: ReportScope, actor: Actor) {
+export async function createScale(input: { name: string; bands: Band[]; isDefault: boolean; weights: Weights | null }, scope: ReportScope, actor: Actor) {
   const problem = checkScale(input.bands);
   if (problem) throw new SisError(describeBandProblem(problem));
+  if (input.weights && input.weights.exam + input.weights.coursework !== 100) throw new SisError("Weights must add up to 100");
 
   const clash = await db.gradingScale.findFirst({ where: { organizationId: scope.organizationId, name: input.name, deletedAt: null } });
   if (clash) throw new SisError(`A scale called "${input.name}" already exists`);
@@ -46,6 +48,8 @@ export async function createScale(input: { name: string; bands: Band[]; isDefaul
         organizationId: scope.organizationId,
         name: input.name,
         isDefault: input.isDefault,
+        examWeight: input.weights?.exam ?? null,
+        courseworkWeight: input.weights?.coursework ?? null,
         bands: { create: input.bands.map((b) => ({ label: b.label, minPercent: b.minPercent, description: b.description ?? null })) },
       },
     });
@@ -57,9 +61,33 @@ export async function createScale(input: { name: string; bands: Band[]; isDefaul
     action: "grading_scale.created",
     resourceType: "grading_scale",
     resourceId: scale.id,
-    after: { name: input.name, bands: input.bands.length, isDefault: input.isDefault },
+    after: { name: input.name, bands: input.bands.length, isDefault: input.isDefault, weights: input.weights },
   });
   return scale;
+}
+
+/**
+ * Which scale NEW reports use. Reports already generated keep the scale and
+ * the weighting they were made with — switching the default never rewrites a
+ * report a family has seen.
+ */
+export async function setDefaultScale(scaleId: string, scope: ReportScope, actor: Actor) {
+  const scale = await db.gradingScale.findFirst({ where: { id: scaleId, organizationId: scope.organizationId, deletedAt: null } });
+  if (!scale) throw new SisError("Grading scale not found");
+  if (scale.isDefault) return;
+
+  await db.$transaction([
+    db.gradingScale.updateMany({ where: { organizationId: scope.organizationId }, data: { isDefault: false } }),
+    db.gradingScale.update({ where: { id: scaleId }, data: { isDefault: true } }),
+  ]);
+  await recordAuditEvent({
+    organizationId: scope.organizationId,
+    actorUserId: actor.userId,
+    action: "grading_scale.made_default",
+    resourceType: "grading_scale",
+    resourceId: scaleId,
+    after: { name: scale.name },
+  });
 }
 
 /**
@@ -70,7 +98,7 @@ export async function createScale(input: { name: string; bands: Band[]; isDefaul
 export async function ensureDefaultScale(scope: ReportScope, actor: Actor) {
   const existing = await defaultScale(scope.organizationId);
   if (existing) return existing;
-  const created = await createScale({ name: "Standard (CBSE-style)", bands: DEFAULT_BANDS, isDefault: true }, scope, actor);
+  const created = await createScale({ name: "Standard (CBSE-style)", bands: DEFAULT_BANDS, isDefault: true, weights: null }, scope, actor);
   return db.gradingScale.findUniqueOrThrow({ where: { id: created.id }, include: { bands: true } });
 }
 
@@ -100,19 +128,33 @@ export async function getReportCard(reportCardId: string, scope: ReportScope) {
   });
 }
 
+export interface GenerateOutcome {
+  reportCardId: string;
+  subjects: number;
+  overallPercent: number | null;
+  /** Subjects whose teacher comment couldn't be kept, because the subject has no marks any more. */
+  droppedComments: string[];
+}
+
 /**
  * Gathers a student's marks for a term and writes a SNAPSHOT.
  *
- * Every figure is copied onto the report's lines. A gradebook corrected next
- * month must not silently change a report a family was handed last term, so
- * regenerating is an explicit act that replaces the lines, and it is refused
- * once the report is published.
+ * Every figure is copied onto the report's lines — and so is the weighting
+ * that produced them. A gradebook corrected next month, or a scale edited
+ * next year, must not silently change a report a family was handed last
+ * term. Regenerating is an explicit act that replaces a draft's figures, and
+ * it is refused once the report is published.
+ *
+ * Teachers' comments are NOT figures: regenerating a draft keeps each
+ * subject's comment, so fixing one mark doesn't cost a class teacher an
+ * evening of rewriting. A comment whose subject has dropped off the report
+ * is named in the outcome rather than lost quietly.
  */
 export async function generateReportCard(
   input: { studentId: string; academicYearId: string; term: string; remarks?: string },
   scope: ReportScope,
   actor: Actor,
-) {
+): Promise<GenerateOutcome> {
   const student = await db.student.findFirst({
     where: { id: input.studentId, organizationId: scope.organizationId, branchId: scope.branchId, deletedAt: null },
     include: { currentSection: true },
@@ -122,11 +164,13 @@ export async function generateReportCard(
 
   const existing = await db.reportCard.findFirst({
     where: { studentId: input.studentId, academicYearId: input.academicYearId, term: input.term },
+    include: { lines: { select: { subjectId: true, subjectName: true, comment: true } } },
   });
   if (existing?.status === "PUBLISHED") throw new SisError("This report has been published — it can't be regenerated");
 
   const scale = await ensureDefaultScale(scope, actor);
   const bands: Band[] = scale.bands.map((b) => ({ label: b.label, minPercent: b.minPercent, description: b.description }));
+  const weights = weightsOf(scale);
 
   // Exam marks: graded attempts on exams for the student's section.
   const attempts = await db.examAttempt.findMany({
@@ -164,15 +208,14 @@ export async function generateReportCard(
   const accs = [...bySubject.values()].sort((a, b) => a.subjectName.localeCompare(b.subjectName));
   if (accs.length === 0) throw new SisError("There are no graded marks for this student yet");
 
-  const marks: SubjectMarks[] = accs.map((a) => ({
-    subjectName: a.subjectName,
-    examMarks: a.examMarks,
-    examMax: a.examMax,
-    assignmentMarks: a.assignmentMarks,
-    assignmentMax: a.assignmentMax,
-  }));
+  const overall = overallResult(accs, weights);
 
-  const overall = overallPercent(marks);
+  const previousComments = new Map<string, { subjectName: string; comment: string }>();
+  for (const l of existing?.lines ?? []) {
+    if (l.comment) previousComments.set(keyOf(l.subjectId, l.subjectName), { subjectName: l.subjectName, comment: l.comment });
+  }
+  const liveKeys = new Set(accs.map((a) => keyOf(a.subjectId, a.subjectName)));
+  const droppedComments = [...previousComments.entries()].filter(([k]) => !liveKeys.has(k)).map(([, v]) => v.subjectName);
 
   // Attendance for the whole year so far — a report card that says nothing
   // about attendance is missing the thing parents ask about most.
@@ -181,42 +224,30 @@ export async function generateReportCard(
     select: { status: true },
   });
   const attendance = summarize(records.map((r) => r.status));
+  const attendancePercent = attendance.attendedRate === null ? null : Math.round(attendance.attendedRate * 100);
+  const figures = {
+    gradingScaleId: scale.id,
+    overallPercent: overall,
+    overallBand: bandFor(overall, bands)?.label ?? null,
+    attendancePercent,
+    examWeight: weights?.exam ?? null,
+    courseworkWeight: weights?.coursework ?? null,
+    generatedByUserId: actor.userId,
+  };
 
   const card = await db.$transaction(async (tx) => {
     const saved = await tx.reportCard.upsert({
       where: { studentId_academicYearId_term: { studentId: input.studentId, academicYearId: input.academicYearId, term: input.term } },
-      create: {
-        studentId: input.studentId,
-        academicYearId: input.academicYearId,
-        gradingScaleId: scale.id,
-        term: input.term,
-        overallPercent: overall,
-        overallBand: bandFor(overall, bands)?.label ?? null,
-        attendancePercent: attendance.attendedRate === null ? null : Math.round(attendance.attendedRate * 100),
-        remarks: input.remarks ?? null,
-        generatedByUserId: actor.userId,
-      },
-      update: {
-        gradingScaleId: scale.id,
-        overallPercent: overall,
-        overallBand: bandFor(overall, bands)?.label ?? null,
-        attendancePercent: attendance.attendedRate === null ? null : Math.round(attendance.attendedRate * 100),
-        remarks: input.remarks ?? null,
-        generatedByUserId: actor.userId,
-        generatedAt: new Date(),
-      },
+      create: { studentId: input.studentId, academicYearId: input.academicYearId, term: input.term, remarks: input.remarks ?? null, ...figures },
+      // Blank remarks on a regeneration means "not changing them", not "erase
+      // what the class teacher wrote".
+      update: { ...figures, ...(input.remarks !== undefined ? { remarks: input.remarks } : {}), generatedAt: new Date() },
     });
 
     await tx.reportCardLine.deleteMany({ where: { reportCardId: saved.id } });
     await tx.reportCardLine.createMany({
       data: accs.map((a, i) => {
-        const percent = subjectPercent({
-          subjectName: a.subjectName,
-          examMarks: a.examMarks,
-          examMax: a.examMax,
-          assignmentMarks: a.assignmentMarks,
-          assignmentMax: a.assignmentMax,
-        });
+        const result = subjectResult(a, weights);
         return {
           reportCardId: saved.id,
           subjectId: a.subjectId,
@@ -225,8 +256,10 @@ export async function generateReportCard(
           examMax: a.examMax,
           assignmentMarks: a.assignmentMarks,
           assignmentMax: a.assignmentMax,
-          percent,
-          band: bandFor(percent, bands)?.label ?? null,
+          percent: result.percent,
+          band: bandFor(result.percent, bands)?.label ?? null,
+          basisNote: result.note,
+          comment: previousComments.get(keyOf(a.subjectId, a.subjectName))?.comment ?? null,
           sequence: i + 1,
         };
       }),
@@ -240,10 +273,64 @@ export async function generateReportCard(
     action: "report_card.generated",
     resourceType: "student",
     resourceId: input.studentId,
-    after: { reportCardId: card.id, term: input.term, subjects: accs.length, overallPercent: overall },
+    after: { reportCardId: card.id, term: input.term, subjects: accs.length, overallPercent: overall, weights, droppedComments },
   });
 
-  return { reportCardId: card.id, subjects: accs.length, overallPercent: overall };
+  return { reportCardId: card.id, subjects: accs.length, overallPercent: overall, droppedComments };
+}
+
+/**
+ * Subject teachers' comments and the overall remarks, on a DRAFT.
+ *
+ * The draft check is repeated inside the transaction as a conditional
+ * update, so a principal publishing at the same moment wins cleanly: the
+ * family never receives a report whose comments changed after it was sent.
+ */
+export async function saveReportComments(
+  reportCardId: string,
+  input: { comments: { lineId: string; comment: string }[]; remarks: string | undefined },
+  scope: ReportScope,
+  actor: Actor,
+  mayReportOn: (sectionId: string | null) => boolean,
+): Promise<{ changed: number }> {
+  const card = await db.reportCard.findFirst({
+    where: { id: reportCardId, student: { organizationId: scope.organizationId, branchId: scope.branchId } },
+    include: { student: { select: { id: true, currentSectionId: true } }, lines: { select: { id: true, comment: true } } },
+  });
+  if (!card) throw new SisError("Report card not found");
+  if (!mayReportOn(card.student.currentSectionId)) throw new SisError("This student isn't in one of your sections");
+  if (card.status === "PUBLISHED") throw new SisError("This report has been published — its comments are part of what the family received");
+
+  const current = new Map(card.lines.map((l) => [l.id, l.comment]));
+  // Ids from the form are only honoured if they belong to THIS report.
+  const changes = input.comments
+    .filter((c) => current.has(c.lineId))
+    .map((c) => ({ lineId: c.lineId, comment: c.comment.trim().slice(0, 500) || null }))
+    .filter((c) => (current.get(c.lineId) ?? null) !== c.comment);
+  const remarks = input.remarks === undefined ? undefined : input.remarks.trim().slice(0, 1000) || null;
+  const remarksChanged = remarks !== undefined && remarks !== card.remarks;
+  if (changes.length === 0 && !remarksChanged) return { changed: 0 };
+
+  await db.$transaction(async (tx) => {
+    const stillDraft = await tx.reportCard.updateMany({
+      where: { id: reportCardId, status: "DRAFT" },
+      data: { remarks: remarksChanged ? remarks : card.remarks },
+    });
+    if (stillDraft.count === 0) throw new SisError("This report was published while you were editing — its comments can't change now");
+    for (const c of changes) {
+      await tx.reportCardLine.updateMany({ where: { id: c.lineId, reportCardId }, data: { comment: c.comment } });
+    }
+  });
+
+  await recordAuditEvent({
+    organizationId: scope.organizationId,
+    actorUserId: actor.userId,
+    action: "report_card.comments_saved",
+    resourceType: "student",
+    resourceId: card.student.id,
+    after: { reportCardId, subjectComments: changes.length, remarksChanged },
+  });
+  return { changed: changes.length + (remarksChanged ? 1 : 0) };
 }
 
 export async function publishReportCard(reportCardId: string, scope: ReportScope, actor: Actor) {
@@ -255,7 +342,8 @@ export async function publishReportCard(reportCardId: string, scope: ReportScope
   if (card.status === "PUBLISHED") throw new SisError("This report is already published");
   if (card._count.lines === 0) throw new SisError("This report has no subjects on it");
 
-  await db.reportCard.update({ where: { id: reportCardId }, data: { status: "PUBLISHED", publishedAt: new Date() } });
+  const published = await db.reportCard.updateMany({ where: { id: reportCardId, status: "DRAFT" }, data: { status: "PUBLISHED", publishedAt: new Date() } });
+  if (published.count === 0) throw new SisError("This report is already published");
   await recordAuditEvent({
     organizationId: scope.organizationId,
     actorUserId: actor.userId,

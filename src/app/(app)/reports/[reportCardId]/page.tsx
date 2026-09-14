@@ -1,13 +1,15 @@
 import { notFound } from "next/navigation";
 import { withBranch } from "@/lib/branch-context";
 import { heldPermissionKeys } from "@/lib/rbac";
-import { Badge, Card, EmptyState, LinkButton, PageHeader } from "@/components/ui";
+import { Badge, Card, EmptyState, Field, LinkButton, PageHeader, Textarea } from "@/components/ui";
 import { ActionForm } from "@/components/action-form";
 import { AccessDenied } from "@/components/sis/access-denied";
 import { loadReportingAccess, param } from "@/modules/sis/access";
+import { getSectionScope, sectionInScope } from "@/modules/academics/scope";
 import { getReportCard } from "@/modules/reporting/report-cards.service";
+import { describeWeights, weightsOf } from "@/modules/reporting/weighting";
 import { formatDate } from "@/modules/sis/labels";
-import { publishReportCardAction } from "@/app/(app)/reports/actions";
+import { publishReportCardAction, saveCommentsAction } from "@/app/(app)/reports/actions";
 
 export default async function ReportCardPage({
   params,
@@ -27,13 +29,27 @@ export default async function ReportCardPage({
     );
   }
   const { ctx, viewer } = result.access;
-  const [card, held] = await Promise.all([
+  const [card, held, sectionScope] = await Promise.all([
     getReportCard(reportCardId, { organizationId: ctx.organizationId, branchId: ctx.branch.id }),
     heldPermissionKeys(viewer.userId, ctx.organizationId),
+    getSectionScope(result.access),
   ]);
   if (!card) notFound();
 
+  // The list already hid other sections' reports from a teacher; the page
+  // must not show one to a teacher who typed its URL.
+  if (!sectionInScope(sectionScope, card.student.currentSectionId ?? "")) {
+    return (
+      <>
+        <PageHeader title="Report card" />
+        <EmptyState>This student isn&apos;t in one of your assigned sections.</EmptyState>
+      </>
+    );
+  }
+
   const hidden = { branchId: ctx.branch.id };
+  const weights = weightsOf(card);
+  const canComment = card.status === "DRAFT" && held.has("reporting.cards:create");
 
   return (
     <div className="flex max-w-3xl flex-col gap-6">
@@ -47,7 +63,7 @@ export default async function ReportCardPage({
         {card.status === "DRAFT" && held.has("reporting.cards:publish") ? (
           <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm dark:border-amber-900 dark:bg-amber-950/30">
             <p className="mb-2 text-amber-900 dark:text-amber-200">
-              This is a draft. Publishing shows it to the family in the portal and freezes it — it can&apos;t be regenerated afterwards.
+              This is a draft. Publishing shows it to the family in the portal and freezes it — figures and comments alike.
             </p>
             <ActionForm action={publishReportCardAction.bind(null, reportCardId)} hidden={hidden} submitLabel="Publish to the family" variant="primary" inline />
           </div>
@@ -84,40 +100,46 @@ export default async function ReportCardPage({
         {card.lines.length === 0 ? (
           <EmptyState>No subjects on this report.</EmptyState>
         ) : (
-          <table className="mt-4 w-full text-left text-sm">
-            <thead className="border-b border-zinc-200 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
-              <tr>
-                <th className="py-2 pr-4 font-medium">Subject</th>
-                <th className="py-2 pr-4 text-right font-medium">Exams</th>
-                <th className="py-2 pr-4 text-right font-medium">Coursework</th>
-                <th className="py-2 pr-4 text-right font-medium">%</th>
-                <th className="py-2 text-right font-medium">Grade</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {card.lines.map((l) => (
-                <tr key={l.id}>
-                  <td className="py-2 pr-4 text-zinc-900 dark:text-zinc-50">{l.subjectName}</td>
-                  <td className="py-2 pr-4 text-right tabular-nums text-zinc-600 dark:text-zinc-300">
-                    {l.examMax ? `${l.examMarks ?? 0}/${l.examMax}` : "—"}
-                  </td>
-                  <td className="py-2 pr-4 text-right tabular-nums text-zinc-600 dark:text-zinc-300">
-                    {l.assignmentMax ? `${l.assignmentMarks ?? 0}/${l.assignmentMax}` : "—"}
-                  </td>
-                  <td className="py-2 pr-4 text-right tabular-nums text-zinc-900 dark:text-zinc-50">{l.percent ?? "—"}</td>
-                  <td className="py-2 text-right font-medium text-zinc-900 dark:text-zinc-50">{l.band ?? "—"}</td>
+          <div className="overflow-x-auto">
+            <table className="mt-4 w-full text-left text-sm">
+              <thead className="border-b border-zinc-200 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                <tr>
+                  <th className="py-2 pr-4 font-medium">Subject</th>
+                  <th className="py-2 pr-4 text-right font-medium">Exams{weights ? ` (${weights.exam}%)` : ""}</th>
+                  <th className="py-2 pr-4 text-right font-medium">Coursework{weights ? ` (${weights.coursework}%)` : ""}</th>
+                  <th className="py-2 pr-4 text-right font-medium">%</th>
+                  <th className="py-2 text-right font-medium">Grade</th>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot className="border-t-2 border-zinc-300 dark:border-zinc-700">
-              <tr>
-                <td className="py-2 pr-4 font-medium text-zinc-900 dark:text-zinc-50">Overall</td>
-                <td colSpan={2} />
-                <td className="py-2 pr-4 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{card.overallPercent ?? "—"}</td>
-                <td className="py-2 text-right font-semibold text-zinc-900 dark:text-zinc-50">{card.overallBand ?? "—"}</td>
-              </tr>
-            </tfoot>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                {card.lines.map((l) => (
+                  <tr key={l.id} className="align-top">
+                    <td className="py-2 pr-4 text-zinc-900 dark:text-zinc-50">
+                      {l.subjectName}
+                      {l.basisNote ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">{l.basisNote}</p> : null}
+                      {l.comment ? <p className="mt-1 text-xs italic text-zinc-600 dark:text-zinc-300">“{l.comment}”</p> : null}
+                    </td>
+                    <td className="py-2 pr-4 text-right tabular-nums text-zinc-600 dark:text-zinc-300">
+                      {l.examMax ? `${l.examMarks ?? 0}/${l.examMax}` : "—"}
+                    </td>
+                    <td className="py-2 pr-4 text-right tabular-nums text-zinc-600 dark:text-zinc-300">
+                      {l.assignmentMax ? `${l.assignmentMarks ?? 0}/${l.assignmentMax}` : "—"}
+                    </td>
+                    <td className="py-2 pr-4 text-right tabular-nums text-zinc-900 dark:text-zinc-50">{l.percent ?? "—"}</td>
+                    <td className="py-2 text-right font-medium text-zinc-900 dark:text-zinc-50">{l.band ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t-2 border-zinc-300 dark:border-zinc-700">
+                <tr>
+                  <td className="py-2 pr-4 font-medium text-zinc-900 dark:text-zinc-50">Overall</td>
+                  <td colSpan={2} />
+                  <td className="py-2 pr-4 text-right font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">{card.overallPercent ?? "—"}</td>
+                  <td className="py-2 text-right font-semibold text-zinc-900 dark:text-zinc-50">{card.overallBand ?? "—"}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         )}
 
         <div className="mt-4 flex flex-wrap gap-x-8 gap-y-2 border-t border-zinc-200 pt-4 text-sm dark:border-zinc-800">
@@ -131,6 +153,10 @@ export default async function ReportCardPage({
               <p className="text-zinc-900 dark:text-zinc-50">{card.gradingScale.name}</p>
             </div>
           ) : null}
+          <div>
+            <p className="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Weighting</p>
+            <p className="text-zinc-900 dark:text-zinc-50">{describeWeights(weights)}</p>
+          </div>
         </div>
 
         {card.remarks ? (
@@ -151,10 +177,35 @@ export default async function ReportCardPage({
         </footer>
       </article>
 
+      {canComment ? (
+        <div className="print:hidden">
+          <Card title="Comments">
+            <ActionForm action={saveCommentsAction.bind(null, reportCardId)} hidden={hidden} submitLabel="Save comments" pendingLabel="Saving…">
+              {card.lines.map((l) => (
+                <Field key={l.id} label={l.subjectName} htmlFor={`c-${l.id}`}>
+                  <Textarea id={`c-${l.id}`} name={`comment:${l.id}`} rows={2} maxLength={500} defaultValue={l.comment ?? ""} />
+                </Field>
+              ))}
+              <Field label="Overall remarks" htmlFor="c-remarks">
+                <Textarea id="c-remarks" name="remarks" rows={2} maxLength={1000} defaultValue={card.remarks ?? ""} />
+              </Field>
+            </ActionForm>
+            <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+              Comments survive regenerating the draft (after a corrected mark, say) and are frozen when it is published.
+            </p>
+          </Card>
+        </div>
+      ) : null}
+
       <Card title="About these figures">
         <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-zinc-600 dark:text-zinc-300 print:hidden">
           <li>Every number is a snapshot copied when the report was generated, not a live read of the gradebook.</li>
-          <li>Exam and coursework marks are summed, not weighted — the weighting would be a school policy this system doesn&apos;t hold.</li>
+          <li>
+            {weights
+              ? `Each subject blends its exam and coursework percentages ${weights.exam}/${weights.coursework}; the overall figure counts every subject equally.`
+              : "Exam and coursework marks are added together; the overall figure counts every mark once."}
+          </li>
+          <li>Where only one kind of mark exists, the subject line says so rather than treating the missing work as zero.</li>
           <li>A subject with no marks shows a dash rather than 0%, which would read as a fail.</li>
         </ul>
       </Card>

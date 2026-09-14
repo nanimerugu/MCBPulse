@@ -3,6 +3,7 @@ import { ChildSwitcher } from "@/components/portal/child-switcher";
 import { PortalDenied } from "@/components/portal/denial";
 import { loadPortalPage } from "@/modules/portal/page-shell";
 import { listPublishedForStudent } from "@/modules/reporting/report-cards.service";
+import { describeWeights, weightsOf } from "@/modules/reporting/weighting";
 import { formatDate } from "@/modules/sis/labels";
 import { param } from "@/modules/sis/access";
 
@@ -41,8 +42,12 @@ export default async function PortalReports({
                 </thead>
                 <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                   {c.lines.map((l) => (
-                    <tr key={l.id}>
-                      <td className="py-2 pr-4 text-zinc-900 dark:text-zinc-50">{l.subjectName}</td>
+                    <tr key={l.id} className="align-top">
+                      <td className="py-2 pr-4 text-zinc-900 dark:text-zinc-50">
+                        {l.subjectName}
+                        {l.basisNote ? <p className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">{l.basisNote}</p> : null}
+                        {l.comment ? <p className="mt-1 text-xs italic text-zinc-600 dark:text-zinc-300">“{l.comment}”</p> : null}
+                      </td>
                       <td className="py-2 pr-4 text-right tabular-nums text-zinc-700 dark:text-zinc-300">{l.percent ?? "—"}</td>
                       <td className="py-2 text-right font-medium text-zinc-900 dark:text-zinc-50">{l.band ?? "—"}</td>
                     </tr>
@@ -61,7 +66,9 @@ export default async function PortalReports({
                 <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">Attendance: {c.attendancePercent}%</p>
               ) : null}
               {c.remarks ? <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-200">{c.remarks}</p> : null}
-              <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">Published {formatDate(c.publishedAt ?? c.generatedAt)}</p>
+              <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+                {describeWeights(weightsOf(c))} · published {formatDate(c.publishedAt ?? c.generatedAt)}
+              </p>
             </Card>
           ))}
         </div>

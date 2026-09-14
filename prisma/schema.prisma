@@ -2336,6 +2336,14 @@ model GradingScale {
 
   name      String
   isDefault Boolean @default(false)
+  /**
+   * How exam and coursework combine into a subject's percentage, as whole
+   * percentages summing to 100 ("exams 80, coursework 20"). Both null means
+   * marks are simply added together — the one combination that needs no
+   * policy. A weighting is a school's decision, so it lives here as data.
+   */
+  examWeight       Int?
+  courseworkWeight Int?
 
   bands       GradingBand[]
   reportCards ReportCard[]
@@ -2391,6 +2399,9 @@ model ReportCard {
   overallBand       String?
   attendancePercent Int?
   remarks           String?
+  /** The weighting used, COPIED — a scale edited next year must not re-explain this report. */
+  examWeight        Int?
+  courseworkWeight  Int?
 
   lines ReportCardLine[]
 
@@ -2418,7 +2429,14 @@ model ReportCardLine {
   assignmentMax   Int?
   percent         Int?
   band            String?
+  /** The subject teacher's comment. Carried across a regeneration; frozen at publish. */
   comment         String?
+  /**
+   * Why the percentage is what it is, when the weighting couldn't apply as
+   * written ("exams only — no coursework was marked"). Printed on the report
+   * so a family isn't shown a number whose basis quietly changed.
+   */
+  basisNote       String?
 
   sequence Int
 

@@ -425,6 +425,36 @@ before this touches anything real.
     `src/lib/auth-tokens.ts`, `src/app/invite/`, `src/app/reset-password/`,
     `src/app/forgot-password/`.
 
+23. **Weighted report cards and subject comments — working.** Report cards
+    used to add exam and coursework marks together, and said so, because a
+    weighting is school policy. The weighting is now policy the SCHOOL sets:
+    a grading scale can carry "exams 80, coursework 20" (or none, which keeps
+    marks added together), and administrators create scales — bands pasted
+    one per line, every bad line reported by number — and choose which is the
+    default for new reports.
+    - **Weighted means percentages first.** 7/10 in exams and 17/20 in
+      coursework is 73% at 80/20, whatever each was marked out of; the
+      overall figure then counts every subject equally.
+    - **Missing evidence is said, not hidden.** A subject with only
+      coursework at 80/20 is graded on the coursework, and the printed line
+      reads "Coursework only — no exams marked, so the 80/20 weighting
+      couldn't apply" — rather than capping the child at 20% for exams nobody
+      set. A component the scale weights at zero never produces a grade alone.
+    - **Snapshots include the policy.** Each report copies the weighting it
+      was made with, so a published Term 1 report made before a school
+      switched to 80/20 still reads, and prints, exactly as it did.
+    - **Subject teachers' comments** are written on the draft and survive
+      regenerating it (a corrected mark no longer costs a class teacher an
+      evening of rewriting). A comment whose subject has dropped off is named
+      rather than lost. Publishing freezes figures and comments together —
+      the draft check is repeated inside the save's transaction, so a publish
+      at the same moment wins. Teachers comment only on their own sections,
+      and the report page now enforces that for a typed URL too.
+
+    Code in `src/modules/reporting/weighting.ts`,
+    `src/modules/reporting/band-input.ts`,
+    `src/modules/reporting/report-cards.service.ts`.
+
 ## Known limitations / follow-ups
 
 - **Phase 9 is a responsive web portal, not native apps.** There is no React
@@ -454,12 +484,12 @@ before this touches anything real.
   provider outage during a tick fails those messages rather than holding
   them. The scheduler only runs if something calls `/api/cron/tick` — see
   the operations runbook.
-- **Report cards sum exam and coursework marks rather than weighting them.**
-  A weighting ("exams are 70%") is school policy, and inventing one would put
-  a number on a report card that no teacher chose. Summing both totals is the
-  one combination that needs no policy; configurable weights are the next
-  step. There is also no per-subject teacher comment and no co-scholastic
-  section.
+- **Report card weighting is exam vs coursework, per scale — nothing finer.**
+  A school can say "exams 80, coursework 20", but not "Science practicals
+  count double" or "Term 1 is 40% of the annual". Scales can be created and
+  made default, not edited — a new scale is the way to change one, which
+  keeps every existing report explainable. There is no co-scholastic section
+  (art, conduct, sport), and no bulk "generate for the whole section".
 - **"Store" is the same table as inventory.** The blueprint names both; the
   schema has one InventoryItem and there is no meaningful difference between
   a stationery store and a stock list, so they were not split.

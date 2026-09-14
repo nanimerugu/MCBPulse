@@ -2,15 +2,16 @@ import Link from "next/link";
 import { withBranch } from "@/lib/branch-context";
 import { db } from "@/lib/db";
 import { heldPermissionKeys } from "@/lib/rbac";
-import { Badge, Card, EmptyState, Field, PageHeader, Select, Textarea } from "@/components/ui";
+import { Badge, Card, EmptyState, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
 import { ActionForm } from "@/components/action-form";
 import { AccessDenied } from "@/components/sis/access-denied";
 import { loadReportingAccess, param } from "@/modules/sis/access";
 import { listReportCards, listScales } from "@/modules/reporting/report-cards.service";
-import { TERMS } from "@/modules/reporting/grading-scale";
+import { DEFAULT_BANDS, TERMS } from "@/modules/reporting/grading-scale";
+import { describeWeights, weightsOf } from "@/modules/reporting/weighting";
 import { getSectionScope, sectionInScope } from "@/modules/academics/scope";
 import { formatDate } from "@/modules/sis/labels";
-import { generateReportCardAction } from "@/app/(app)/reports/actions";
+import { createScaleAction, generateReportCardAction, setDefaultScaleAction } from "@/app/(app)/reports/actions";
 
 export default async function ReportsPage({
   searchParams,
@@ -50,34 +51,81 @@ export default async function ReportsPage({
   const myStudents = students.filter((s) => sectionInScope(sectionScope, s.currentSectionId ?? ""));
 
   const hidden = { branchId: ctx.branch.id };
-  const scale = scales.find((s) => s.isDefault) ?? scales[0];
+  const canConfigureScales = held.has("reporting.scales:configure");
+  const defaultScale = scales.find((s) => s.isDefault) ?? scales[0];
 
   return (
     <div className="flex max-w-4xl flex-col gap-6">
       <PageHeader title="Report cards" description={`${visibleCards.length} report${visibleCards.length === 1 ? "" : "s"} · ${ctx.branch.name}`} />
 
-      <Card title="Grading scale">
-        {!scale ? (
+      <Card title="Grading scales">
+        {scales.length === 0 ? (
           <EmptyState>No scale configured — the CBSE-style default is created the first time a report is generated.</EmptyState>
         ) : (
-          <>
-            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-              {scale.name} {scale.isDefault ? <Badge tone="green">default</Badge> : null}
-            </p>
-            <ul className="mt-2 flex flex-wrap gap-1.5">
-              {scale.bands.map((b) => (
-                <li key={b.id} className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                  <strong>{b.label}</strong> {b.minPercent}%+{b.description ? ` · ${b.description}` : ""}
-                </li>
-              ))}
-            </ul>
-          </>
+          <ul className="flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
+            {scales.map((s) => (
+              <li key={s.id} className="py-3 first:pt-0">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+                    {s.name} {s.isDefault ? <Badge tone="green">default — used for new reports</Badge> : null}
+                  </p>
+                  {canConfigureScales && !s.isDefault ? (
+                    <ActionForm action={setDefaultScaleAction.bind(null, s.id)} hidden={hidden} submitLabel="Make default" inline />
+                  ) : null}
+                </div>
+                <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  {describeWeights(weightsOf(s))} · used by {s._count.reportCards} report{s._count.reportCards === 1 ? "" : "s"}
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-1.5">
+                  {s.bands.map((b) => (
+                    <li key={b.id} className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                      <strong>{b.label}</strong> {b.minPercent}%+{b.description ? ` · ${b.description}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
         )}
         <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-          The scale is data, not code: a CBSE school, an IB school and a state-board school disagree about what 72% is called, and none of
-          them are wrong. Exam and assignment marks are <strong>summed</strong>, not weighted — a weighting is school policy, and inventing
-          one would put a number on a report card that no teacher chose.
+          The scale is data, not code: a CBSE school, an IB school and a state-board school disagree about what 72% is called, and none of them
+          are wrong. So is the weighting — leave it blank and exam and coursework marks are added together; set it (&quot;exams 80, coursework
+          20&quot;) and each becomes a percentage first. Every report keeps a copy of the weighting it was made with.
         </p>
+
+        {canConfigureScales ? (
+          <details className="mt-4">
+            <summary className="cursor-pointer text-sm font-medium text-zinc-700 dark:text-zinc-200">New grading scale</summary>
+            <div className="mt-3">
+              <ActionForm action={createScaleAction} hidden={hidden} submitLabel="Create scale">
+                <Field label="Name" htmlFor="gs-name">
+                  <Input id="gs-name" name="name" required maxLength={60} placeholder="CBSE with 80/20 weighting" />
+                </Field>
+                <Field label="Bands — one per line: label, lowest %, description" htmlFor="gs-bands" hint="The lowest band must start at 0.">
+                  <Textarea
+                    id="gs-bands"
+                    name="bands"
+                    rows={8}
+                    required
+                    className="font-mono"
+                    defaultValue={DEFAULT_BANDS.map((b) => [b.label, b.minPercent, b.description].filter((x) => x !== null && x !== undefined).join(", ")).join("\n")}
+                  />
+                </Field>
+                <div className="flex flex-wrap gap-3">
+                  <Field label="Exam weight %" htmlFor="gs-ew" hint="Leave both blank to add marks together">
+                    <Input id="gs-ew" name="examWeight" type="number" min={0} max={100} className="!w-32" />
+                  </Field>
+                  <Field label="Coursework weight %" htmlFor="gs-cw">
+                    <Input id="gs-cw" name="courseworkWeight" type="number" min={0} max={100} className="!w-32" />
+                  </Field>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+                  <input type="checkbox" name="isDefault" /> Use it for new reports
+                </label>
+              </ActionForm>
+            </div>
+          </details>
+        ) : null}
       </Card>
 
       {held.has("reporting.cards:create") && myStudents.length > 0 && years.length > 0 ? (
@@ -116,13 +164,14 @@ export default async function ReportsPage({
                 </Select>
               </Field>
             </div>
-            <Field label="Remarks" htmlFor="rc-remarks">
+            <Field label="Remarks" htmlFor="rc-remarks" hint="Leave blank when regenerating to keep the remarks already written.">
               <Textarea id="rc-remarks" name="remarks" rows={2} maxLength={1000} placeholder="A steady term. Keep working on written explanations." />
             </Field>
           </ActionForm>
           <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-            A report is a snapshot: every figure is copied at generation, so a gradebook corrected next month never changes a report a
-            family already has. Regenerating replaces a draft; a published report can&apos;t be regenerated at all.
+            Uses {defaultScale ? <strong>{defaultScale.name}</strong> : "the default scale"}. A report is a snapshot: every figure is copied at
+            generation, so a gradebook corrected next month never changes a report a family already has. Regenerating a draft replaces its
+            figures but keeps subject comments; a published report can&apos;t be regenerated at all.
           </p>
         </Card>
       ) : null}
