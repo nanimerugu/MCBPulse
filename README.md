@@ -388,6 +388,43 @@ before this touches anything real.
     `src/modules/automation/scheduled.service.ts`,
     `src/modules/connect/deferred.service.ts`.
 
+22. **Family onboarding and password reset — working.** Portal logins used
+    to exist only because the seed created them. Now the Student 360 shows
+    each guardian's portal status (no login / invited / active / withdrawn)
+    and, for staff holding the new `sis.portal_access:edit` permission
+    (admins, principal, front office), invites a guardian — or an enrolled
+    student, with a school-assigned address — to set their OWN password
+    through a one-time link. Staff never type a family's password.
+    - **Links are credentials, treated as such.** 256-bit random tokens;
+      only their SHA-256 is stored, so a database dump signs nobody in.
+      Single use (claimed by a conditional update in the same transaction
+      as the password write), 7 days for an invitation, 1 hour for a reset,
+      and issuing a new one revokes the old. The delivery log records that a
+      link was sent but never the link, because front-office staff can read
+      that log.
+    - **Forgot password** (`/forgot-password`) answers identically for
+      known and unknown addresses — in words and, padded to a floor, in
+      time — and is throttled per IP+address and per IP. Links are built
+      from `APP_URL`/`AUTH_URL`, never the request's Host header, which is
+      what makes "password reset poisoning" impossible.
+    - **A reset really locks people out.** `User.passwordChangedAt` is
+      compared with each session's sign-in time on every request, so every
+      session opened with the old password ends.
+    - **Withdrawing access** revokes the portal role, and disables the login
+      only if it holds nothing else — a teacher whose child has left keeps
+      their staff access.
+    - Passwords: 10+ characters, at most 72 bytes (bcrypt silently ignores
+      the rest), not on the obvious lists (including this system's own demo
+      password), not built from the person's email or name.
+
+    Without an email provider nothing can arrive, so an invitation shows its
+    link to the member of staff to hand over; a RESET link is never shown
+    to staff (that account already works, and a link on a staff screen is a
+    way into it) and in development is printed to the server console only.
+    Code in `src/modules/identity/portal-access.service.ts`,
+    `src/lib/auth-tokens.ts`, `src/app/invite/`, `src/app/reset-password/`,
+    `src/app/forgot-password/`.
+
 ## Known limitations / follow-ups
 
 - **Phase 9 is a responsive web portal, not native apps.** There is no React
@@ -398,10 +435,13 @@ before this touches anything real.
   dues but cannot pay (no gateway), and nobody can update their own contact
   details. Student submission is the one write, and it is the student's
   alone — a parent cannot submit on their behalf.
-- **Portal logins are created by the seed, not by the product.** There is no
-  invite flow, no email verification, no self-service password reset and no
-  OTP. `Guardian.userId` and `Student.userId` are set directly; a real
-  deployment needs an onboarding path before any of this reaches a family.
+- **Onboarding and reset need an email provider to be real.** The flows work
+  end to end, but with only the recording adapter no email leaves the
+  system: invitation links are handed over by staff, and a family member who
+  forgets their password must ask the office (whose reset can't arrive
+  either). There is still no OTP, no 2FA, no bulk "invite every guardian in
+  Grade 5", and a guardian without an email address on file can't be
+  invited at all — phone-number sign-in would need an SMS provider.
 - **Automation's only actions are notifications.** It cannot assign a task,
   update a field or call a webhook, and date-based triggers cover invoices
   and library loans only (no "assignment due tomorrow" yet). The per-module

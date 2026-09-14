@@ -74,6 +74,11 @@ export const PERMISSIONS: PermissionDef[] = [
   // once an approval workflow exists — that's the section-12 engine's job.
   { module: "sis.enrollment", action: "edit", description: "Change a student's enrollment: enroll, promote, transfer, withdraw, graduate" },
 
+  // Giving a family a login is its own permission, not a side effect of
+  // editing a guardian: it is the moment a record starts being readable by
+  // someone outside the school.
+  { module: "sis.portal_access", action: "edit", description: "Invite a guardian or student to the family portal, send a password reset, or withdraw their access" },
+
   { module: "sis.guardians", action: "view", description: "View guardians and their links to students" },
   { module: "sis.guardians", action: "create", description: "Create a guardian and link them to a student" },
   { module: "sis.guardians", action: "edit", description: "Edit a guardian or a guardian link" },

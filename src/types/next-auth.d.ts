@@ -5,11 +5,14 @@ declare module "next-auth" {
     user: {
       id: string;
     } & DefaultSession["user"];
+    /** Seconds since epoch when this session was signed in. */
+    authTime?: number;
   }
 }
 
 declare module "next-auth/jwt" {
   interface JWT {
     userId?: string;
+    authTime?: number;
   }
 }

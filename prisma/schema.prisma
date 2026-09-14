@@ -196,10 +196,15 @@ model User {
   status       UserStatus @default(INVITED)
 
   lastLoginAt DateTime?
+  // Set whenever the password is set or reset. A session signed in before
+  // this moment is refused (src/lib/tenant.ts), so a reset actually locks
+  // out whoever knew the old password instead of leaving their cookie alive.
+  passwordChangedAt DateTime?
 
   roleAssignments RoleAssignment[]
   auditEvents     AuditEvent[]     @relation("AuditActor")
   refreshTokens   RefreshToken[]
+  authTokens      AuthToken[]
 
   // A User is a login. At most one of these profiles is the person behind
   // it (a parent is a Guardian, a teacher is Staff, a pupil is a Student).
@@ -334,6 +339,39 @@ model RefreshToken {
 // is logged, and the log itself is append-only — no update/delete path exists
 // in application code for this model.
 // ---------------------------------------------------------------------------
+
+enum AuthTokenPurpose {
+  INVITE
+  PASSWORD_RESET
+}
+
+/**
+ * A one-time link: an invitation to set a first password, or a reset of a
+ * forgotten one. Only the SHA-256 of the token is stored — the token itself
+ * exists in the link and nowhere else, so a database dump (or anyone who can
+ * read the delivery log) cannot sign in as anybody.
+ *
+ * Single use, enforced by a conditional update on `usedAt IS NULL`, and
+ * short-lived. Issuing a new one revokes the person's older ones.
+ */
+model AuthToken {
+  id      String           @id @default(uuid())
+  userId  String
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose AuthTokenPurpose
+
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  revokedAt DateTime?
+
+  /** The organization whose portal an invitation is for; null for a reset. */
+  organizationId  String?
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+
+  @@index([userId, purpose])
+}
 
 model AuditEvent {
   id             String        @id @default(uuid())

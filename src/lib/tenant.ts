@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { sessionPredatesPasswordChange } from "@/lib/auth-tokens";
 
 /**
  * The signed-in user plus every (org, branch?, year?) they currently hold a
@@ -40,9 +41,12 @@ export async function getViewerContext(): Promise<ViewerContext | null> {
 
   const user = await db.user.findFirst({
     where: { id: session.user.id, status: "ACTIVE", deletedAt: null },
-    select: { id: true, email: true, name: true },
+    select: { id: true, email: true, name: true, passwordChangedAt: true },
   });
   if (!user) return null;
+  // A reset exists to lock out whoever knew the old password. Their cookie
+  // was signed before the change, so it stops working here.
+  if (sessionPredatesPasswordChange(session.authTime, user.passwordChangedAt)) return null;
 
   const assignments = await loadAssignments(user.id);
 

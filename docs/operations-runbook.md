@@ -129,8 +129,15 @@ planning that first.
 - **No secret rotation procedure**, no KMS, no encryption at rest beyond
   whatever the database provides.
 - **No penetration test.** Nothing here has been reviewed by anyone else.
-- Password policy is minimum-length only: no complexity rule, no breach-list
-  check, no expiry, no reset flow.
+- Password policy for self-chosen passwords (invitation, reset): 10+
+  characters, at most 72 bytes, a short blocklist, not the person's email or
+  name. There is no breach-list (HIBP) check and no expiry. Staff created
+  with an initial password from the staff screen still only get the length
+  rule.
+- **Password reset needs a real email provider.** Until one is configured, a
+  reset link can't reach anyone; in development it is printed to the server
+  console (never in production). Set `APP_URL` in production — links are
+  never built from the request's Host header, and the app refuses to guess.
 
 ---
 
@@ -179,7 +186,11 @@ against WCAG AA.
 3. If data looks wrong, **do not repair it by hand first** — capture what
    the audit log says happened, then repair.
 4. To lock an account out immediately, set `User.status = 'DISABLED'`; the
-   next request re-validates and the session dies.
+   next request re-validates and the session dies. For a portal login,
+   "Withdraw access" on the Student 360 does this properly (revokes the role
+   and any outstanding links, disables the login only if nothing else uses
+   it). A suspected stolen password: send a reset — completing it ends every
+   session opened with the old password.
 5. To take a module out of service for one organization, switch its feature
    flag off in `/settings` — it is one row and it takes effect on the next
    request.

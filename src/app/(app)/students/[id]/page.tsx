@@ -33,6 +33,8 @@ import { studentFeeSummary } from "@/modules/finance/invoices.service";
 import { listConcessions, listFeeStructures } from "@/modules/finance/fees.service";
 import { INVOICE_STATUS_LABELS, formatMoney, toMinor } from "@/modules/finance/money";
 import { grantConcessionAction, raiseInvoiceAction } from "@/app/(app)/finance/actions";
+import { portalAccessByUser, type PortalAccess } from "@/modules/identity/portal-access.service";
+import { GuardianPortalControls, StudentLoginCard } from "@/app/(app)/students/[id]/portal-access";
 
 export default async function StudentProfilePage({
   params,
@@ -116,6 +118,20 @@ export default async function StudentProfilePage({
       }))
     : [];
 
+  // Who can sign in to the family portal for this child, and how they got there.
+  const [portalOn, canPortal] = await Promise.all([
+    isFeatureEnabled("phase9.portal", ctx.organizationId),
+    authorize(viewer.userId, "sis.portal_access", "edit", scope),
+  ]);
+  const NO_LOGIN: PortalAccess = { state: "none" };
+  const guardianUserIds = student.guardianLinks.flatMap((l) => (l.guardian.userId ? [l.guardian.userId] : []));
+  const [guardianAccess, studentAccess] = portalOn
+    ? await Promise.all([
+        portalAccessByUser(guardianUserIds, "parent", ctx.organizationId),
+        student.userId ? portalAccessByUser([student.userId], "student", ctx.organizationId) : Promise.resolve(new Map<string, PortalAccess>()),
+      ])
+    : [new Map<string, PortalAccess>(), new Map<string, PortalAccess>()];
+
   const actions = allowedActions(student.status);
   const sectionOptions = sections.map((s) => ({ id: s.id, label: `${s.grade.name} / ${s.name}` }));
 
@@ -193,6 +209,16 @@ export default async function StudentProfilePage({
                         {link.guardian.email ? ` · ${link.guardian.email}` : ""}
                         {link.guardian.occupation ? ` · ${link.guardian.occupation}` : ""}
                       </p>
+                      {portalOn ? (
+                        <GuardianPortalControls
+                          access={(link.guardian.userId && guardianAccess.get(link.guardian.userId)) || NO_LOGIN}
+                          guardianId={link.guardian.id}
+                          studentId={student.id}
+                          branchId={ctx.branch.id}
+                          hasEmail={Boolean(link.guardian.email)}
+                          canManage={canPortal}
+                        />
+                      ) : null}
                     </div>
                     {canUnlinkGuardian ? (
                       <form action={unlinkGuardianAction}>
@@ -217,6 +243,16 @@ export default async function StudentProfilePage({
               </details>
             ) : null}
           </Card>
+
+          {portalOn ? (
+            <StudentLoginCard
+              access={(student.userId && studentAccess.get(student.userId)) || NO_LOGIN}
+              studentId={student.id}
+              branchId={ctx.branch.id}
+              canManage={canPortal}
+              enrolled={student.status === "ENROLLED"}
+            />
+          ) : null}
 
           <Card title="Emergency contacts">
             {student.emergencyContacts.length === 0 ? (

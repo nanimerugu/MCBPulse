@@ -55,13 +55,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     jwt({ token, user }) {
-      if (user?.id) token.userId = user.id;
+      if (user?.id) {
+        token.userId = user.id;
+        // When THIS sign-in happened. Compared against User.passwordChangedAt
+        // on every request, so resetting a password ends every session that
+        // was opened with the old one.
+        token.authTime = Math.floor(Date.now() / 1000);
+      }
       return token;
     },
     session({ session, token }) {
       if (session.user && typeof token.userId === "string") {
         session.user.id = token.userId;
       }
+      if (typeof token.authTime === "number") session.authTime = token.authTime;
       return session;
     },
   },
