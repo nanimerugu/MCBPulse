@@ -546,6 +546,12 @@ model Staff {
   designation  String
   joinDate     DateTime
   exitDate     DateTime?
+  exitReason   String?
+
+  // Monthly gross. Decimal, never Float — same rule as Finance. Null for
+  // someone whose pay hasn't been set, who is then skipped by payroll
+  // rather than silently paid zero.
+  monthlyGrossPay Decimal? @db.Decimal(12, 2)
 
   subjectAssignments  SubjectAssignment[]
   timetableSlots      TimetableSlot[]
@@ -1454,6 +1460,8 @@ model Position {
 
   createdAt DateTime  @default(now())
   deletedAt DateTime?
+
+  @@unique([organizationId, title])
 }
 
 enum PayrollRunStatus {
@@ -1473,6 +1481,14 @@ model PayrollRun {
   periodYear  Int
   status      PayrollRunStatus @default(DRAFT)
   processedAt DateTime?
+  paidAt      DateTime?
+
+  // The deduction rule applied to every payslip in this run, recorded so a
+  // payslip can always be explained. NOT a statutory engine — see
+  // src/modules/hr/payroll.ts for why real PF/ESI/TDS is out of scope.
+  deductionPercent    Decimal @default(0) @db.Decimal(5, 2)
+  fixedDeduction      Decimal @default(0) @db.Decimal(12, 2)
+  deductionDescription String?
 
   payslips Payslip[]
 

@@ -27,7 +27,10 @@ export default async function LedgerPage({
 
   return (
     <div className="flex max-w-5xl flex-col gap-6">
-      <PageHeader title="Ledger" description="Organization-wide double-entry journal. Every payment and processed refund posts a balanced entry." />
+      <PageHeader
+        title="Ledger"
+        description="Organization-wide double-entry journal. Every payment, processed refund and paid payroll run posts a balanced entry."
+      />
 
       <Card title="Trial balance">
         {accounts.length === 0 ? (

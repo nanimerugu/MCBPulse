@@ -29,11 +29,19 @@ const NAV_SECTIONS: NavItem[] = [
   { label: "Finance", href: "/finance", flag: "phase4.finance", permission: "finance.invoices:view" },
   { label: "LMS", href: "/lms", flag: "phase5.lms", permission: "lms.assignments:view" },
   { label: "Communication", href: "/connect", flag: "phase6.connect", permission: "connect.broadcasts:view" },
-  { label: "HR", comingInPhase: "Phase 7" },
+  { label: "HR", href: "/hr", flag: "phase7.hr", permission: "hr.org:view" },
   { label: "Operations", comingInPhase: "Phase 8" },
   { label: "Reports & Analytics", comingInPhase: "Phase 11" },
   { label: "AI Copilot", comingInPhase: "Phase 10" },
 ];
+
+/**
+ * Every flag the nav needs resolved, derived from the items themselves. The
+ * layout used to keep its own hand-written copy of this list, and Phase 7
+ * shipped with HR invisible because the new key was added in one place and
+ * not the other. Deriving it means adding a nav item is the whole change.
+ */
+export const NAV_FLAGS: readonly string[] = [...new Set(NAV_SECTIONS.flatMap((i) => (i.flag ? [i.flag] : [])))];
 
 export function AppShell({
   children,

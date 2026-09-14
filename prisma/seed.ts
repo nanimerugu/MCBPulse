@@ -50,13 +50,28 @@ async function main() {
       isSystem: true,
     });
 
+    const wanted = new Set<string>();
     for (const key of role.permissions) {
       const permission = await db.permission.findUniqueOrThrow({ where: { key } });
+      wanted.add(permission.id);
       await db.rolePermission.upsert({
         where: { roleId_permissionId: { roleId: created.id, permissionId: permission.id } },
         create: { roleId: created.id, permissionId: permission.id },
         update: {},
       });
+    }
+
+    // Reconcile, don't just accumulate. Adding-only meant a permission
+    // REMOVED from a system role's definition stayed granted forever in any
+    // database seeded before the change — so a role could be widened but
+    // never narrowed, which is the wrong direction for a mistake to fail in.
+    // Scoped to this system role: custom per-organization roles are the
+    // tenant's own and are never touched here.
+    const stale = await db.rolePermission.findMany({ where: { roleId: created.id }, select: { permissionId: true } });
+    const revoke = stale.map((rp) => rp.permissionId).filter((id) => !wanted.has(id));
+    if (revoke.length > 0) {
+      await db.rolePermission.deleteMany({ where: { roleId: created.id, permissionId: { in: revoke } } });
+      console.log(`  ${role.key}: revoked ${revoke.length} permission(s) no longer in the role definition`);
     }
   }
 
@@ -449,6 +464,81 @@ async function main() {
     }
   }
 
+  console.log("Seeding demo HR...");
+  const departmentIds = new Map<string, string>();
+  for (const name of ["Mathematics", "Science", "Administration"]) {
+    const dept =
+      (await db.department.findFirst({ where: { organizationId: org.id, name, deletedAt: null } })) ??
+      (await db.department.create({ data: { organizationId: org.id, name } }));
+    departmentIds.set(name, dept.id);
+  }
+  const positionIds = new Map<string, string>();
+  for (const [title, dept] of [
+    ["Senior Teacher", "Mathematics"],
+    ["Teacher", "Science"],
+    ["Office Administrator", "Administration"],
+  ] as const) {
+    const position = await db.position.upsert({
+      where: { organizationId_title: { organizationId: org.id, title } },
+      create: { organizationId: org.id, title, departmentId: departmentIds.get(dept)! },
+      update: {},
+    });
+    positionIds.set(title, position.id);
+  }
+
+  await db.staff.update({
+    where: { id: teacherStaff.id },
+    data: {
+      departmentId: departmentIds.get("Mathematics"),
+      positionId: positionIds.get("Senior Teacher"),
+      monthlyGrossPay: "52000.00",
+    },
+  });
+
+  // A second staff member so a payroll run has more than one row, and a
+  // third with NO pay set so the "skipped, and here's why" path is visible
+  // the first time anyone generates payslips.
+  const officeUser = await db.user.upsert({
+    where: { email: "office@nalanda-demo.local" },
+    create: { email: "office@nalanda-demo.local", name: "Latha Nair", passwordHash: await bcrypt.hash("ChangeMe!123", 12), status: "ACTIVE" },
+    update: {},
+  });
+  await db.staff.upsert({
+    where: { organizationId_employeeCode: { organizationId: org.id, employeeCode: "A-200" } },
+    create: {
+      organizationId: org.id,
+      branchId: branch.id,
+      userId: officeUser.id,
+      employeeCode: "A-200",
+      designation: "Office Administrator",
+      departmentId: departmentIds.get("Administration"),
+      positionId: positionIds.get("Office Administrator"),
+      joinDate: new Date(`${now.getFullYear() - 2}-06-01T00:00:00.000Z`),
+      monthlyGrossPay: "31000.00",
+    },
+    update: {},
+  });
+  const labUser = await db.user.upsert({
+    where: { email: "lab@nalanda-demo.local" },
+    create: { email: "lab@nalanda-demo.local", name: "Suresh Iyer", passwordHash: await bcrypt.hash("ChangeMe!123", 12), status: "ACTIVE" },
+    update: {},
+  });
+  await db.staff.upsert({
+    where: { organizationId_employeeCode: { organizationId: org.id, employeeCode: "T-101" } },
+    create: {
+      organizationId: org.id,
+      branchId: branch.id,
+      userId: labUser.id,
+      employeeCode: "T-101",
+      designation: "Lab Assistant",
+      departmentId: departmentIds.get("Science"),
+      positionId: positionIds.get("Teacher"),
+      joinDate: new Date(`${now.getFullYear()}-07-15T00:00:00.000Z`),
+      // monthlyGrossPay deliberately left unset.
+    },
+    update: {},
+  });
+
   console.log("Seeding feature flags...");
   // Phase 1 shipped, so SIS defaults on. An organization can still switch it
   // off with a FeatureFlagOverride — that's what the flag is for.
@@ -480,6 +570,11 @@ async function main() {
   await db.featureFlag.upsert({
     where: { key: "phase6.connect" },
     create: { key: "phase6.connect", description: "Connect: templates, broadcasts, delivery log, quiet hours (Phase 6)", defaultEnabled: true },
+    update: { defaultEnabled: true },
+  });
+  await db.featureFlag.upsert({
+    where: { key: "phase7.hr" },
+    create: { key: "phase7.hr", description: "HR: departments, positions, staff leave, payroll runs, appraisals, exit (Phase 7)", defaultEnabled: true },
     update: { defaultEnabled: true },
   });
   await db.featureFlag.upsert({

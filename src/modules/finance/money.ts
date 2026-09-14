@@ -93,6 +93,8 @@ export const ACCOUNT_CODES = {
   CASH: "1000",
   BANK: "1010",
   FEE_INCOME: "4000",
+  /** Phase 7: a paid payroll run debits salary expense and credits the bank. */
+  SALARY_EXPENSE: "5000",
 } as const;
 
 export function paymentPosting(method: PaymentMethod): { debit: string; credit: string } {

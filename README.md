@@ -80,10 +80,23 @@ phase gets its own schema slice and its own pass, not one giant change.
    not delivered** — see below. Gated by `phase6.connect` and 10
    `connect.*` permissions. Code in `src/modules/connect/` and
    `src/app/(app)/connect/`.
-8. **Phase 7+ — schema only.** Examcell (question banks, papers, online
-   exam attempts) and the rest of blueprint section 8 (HR, Operations,
-   Files, AI) exist in `prisma/schema.prisma` and migrate cleanly. **No
-   route or business logic touches any of it yet.**
+8. **Phase 7 (HR) — working, with one large caveat below.** Departments and
+   positions as an organization-wide org chart; staff compensation behind
+   its *own* permission (`hr.compensation`), separate from the staff
+   directory, so leadership can browse people without seeing salaries;
+   staff leave with an overlap guard that names the clashing request;
+   monthly **payroll runs** (`DRAFT → PROCESSED → PAID`, one per branch per
+   month) whose payslips are rebuilt from current pay while draft and frozen
+   afterwards, with CSV export; appraisals; and staff exit, which disables
+   the login and takes the person off later runs. Paying a run posts one
+   balanced journal entry to the Phase 4 ledger (debit salary expense,
+   credit bank). **Caveat: the deduction rule is whatever you type — this is
+   not a statutory payroll engine** — see below. Gated by `phase7.hr` and 14
+   `hr.*` permissions. Code in `src/modules/hr/` and `src/app/(app)/hr/`.
+9. **Phase 8+ — schema only.** Examcell (question banks, papers, online
+   exam attempts) and the rest of blueprint section 8 (Operations, Files,
+   AI) exist in `prisma/schema.prisma` and migrate cleanly. **No route or
+   business logic touches any of it yet.**
 
 ## Stack
 
@@ -182,10 +195,40 @@ before this touches anything real.
 | Delivery policy: consent, de-duplication, midnight-wrapping quiet hours (pure, tested) | [`src/modules/connect/delivery-policy.ts`](src/modules/connect/delivery-policy.ts) |
 | Provider abstraction — swap the recording adapter for a real gateway here | [`src/modules/connect/providers.ts`](src/modules/connect/providers.ts) |
 | Internal notify API other modules call; never throws into its caller | [`src/modules/connect/notify.ts`](src/modules/connect/notify.ts) |
-| **Schema only:** canonical data model for the Phase 7+ domains (part of 72 tables / 29 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
+| Payroll arithmetic and lifecycle: clamped deductions that can't drive net pay negative, `DRAFT→PROCESSED→PAID`, period eligibility from join/exit dates (pure, tested) | [`src/modules/hr/payroll.ts`](src/modules/hr/payroll.ts) |
+| Payroll run: regenerate-while-draft, named skip reasons, and a status flip that shares one transaction with its ledger posting | [`src/modules/hr/payroll.service.ts`](src/modules/hr/payroll.service.ts) |
+| Staff leave: inclusive day counts, overlap detection that ignores rejected requests (pure, tested) | [`src/modules/hr/leave.ts`](src/modules/hr/leave.ts) |
+| Compensation behind its own permission, plus exit that disables the login in the same transaction | [`src/modules/hr/compensation.service.ts`](src/modules/hr/compensation.service.ts) |
+| Seed reconciles system-role grants — a permission removed from a role definition is revoked, not left behind | [`prisma/seed.ts`](prisma/seed.ts) |
+| Nav feature flags derived from the nav items themselves, so a new module can't ship invisible | [`src/components/app-shell.tsx`](src/components/app-shell.tsx) |
+| **Schema only:** canonical data model for the Phase 8+ domains (part of 72 tables / 29 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
 
 ## Known limitations / follow-ups
 
+- **Payroll is arithmetic, not a statutory engine — do not file with it.**
+  A run carries one deduction percentage plus an optional fixed amount, both
+  typed in by whoever opens the run and recorded on it. MCBPulse does **not**
+  compute PF slabs, ESI eligibility, state-varying professional tax, or TDS
+  against an employee's declarations, and produces no statutory return.
+  Blueprint §18 requires legal review before real use. The deliberate choice
+  (`src/modules/hr/payroll.ts`) is that no numbers beat guessed numbers that
+  look official. Paying a run credits **bank** for net pay only; deductions
+  are not posted to a statutory liability account, because doing so would
+  assert a treatment this system isn't qualified to make.
+- **Payroll does not prorate.** Approved staff leave inside a period is shown
+  on the run as context (an "N days" column) and changes nothing. Loss-of-pay
+  rules, leave balances and leave types are a policy layer that isn't built;
+  a school needing them must adjust the pay figure by hand before generating.
+- **Staff can't file their own leave.** `hr.leave` is an unscoped permission,
+  so granting it to a teacher would let them read every colleague's leave
+  history and file leave in someone else's name. Self-service needs an
+  attribute policy scoping `hr.leave` to the requester's own staff record —
+  the same missing "own records only" scope the student/parent portal needs.
+  Until then staff leave sits with HR and school leadership, and ordinary
+  staff roles get only `hr.org:view`.
+- **Exiting a staff member disables their login but doesn't reassign their
+  work.** Subject assignments, timetable slots and authored assignments stay
+  pointed at them; nothing prompts a handover.
 - **Partial unique index isn't in `schema.prisma`.** Postgres treats every
   `NULL` as distinct, so the `@@unique([organizationId, key])` on `Role`
   doesn't stop two system roles from sharing a key. The actual guarantee is
@@ -215,8 +258,8 @@ before this touches anything real.
   pre-approval by Meta.
 - **Quiet hours are UTC.** `Branch.timezone` exists and isn't consulted yet;
   a school in IST setting 21:00 is currently setting 21:00 UTC.
-- **Phase 7+ tables have no RBAC permissions yet.** `src/lib/permissions.ts`
-  lists foundation, SIS, Academics, Admissions, Finance, LMS and Connect
+- **Phase 8+ tables have no RBAC permissions yet.** `src/lib/permissions.ts`
+  lists foundation, SIS, Academics, Admissions, Finance, LMS, Connect and HR
   modules. Adding a module's permissions belongs with the code that first
   checks them.
 - **Students don't submit their own work.** Teachers record submissions and

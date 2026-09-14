@@ -5,7 +5,7 @@
  *
  * Grants accrue phase by phase: Phase 0 (foundation), Phase 1 (SIS), Phase 2
  * (Academics), Phase 3 (Admissions), Phase 4 (Finance), Phase 5 (LMS),
- * Phase 6 (Connect). Roles whose modules haven't been built yet (Librarian,
+ * Phase 6 (Connect), Phase 7 (HR). Roles whose modules haven't been built yet (Librarian,
  * Transport Manager, ...) still have view-only or empty grants.
  *
  * Teacher and Class Teacher are SECTION-SCOPED roles (see
@@ -175,6 +175,38 @@ const CONNECT_SENDER = [
 ];
 const CONNECT_READ = ["connect.templates:view", "connect.broadcasts:view", "connect.delivery:view"];
 
+const HR_ALL = [
+  "hr.org:view",
+  "hr.org:configure",
+  "hr.compensation:view",
+  "hr.compensation:edit",
+  "hr.leave:view",
+  "hr.leave:create",
+  "hr.leave:approve",
+  "hr.payroll:view",
+  "hr.payroll:create",
+  "hr.payroll:approve",
+  "hr.payroll:export",
+  "hr.appraisals:view",
+  "hr.appraisals:edit",
+  "hr.exit:edit",
+];
+/** A head teacher sees the org chart and signs off leave; pay is not theirs to see. */
+const HR_LEADERSHIP = ["hr.org:view", "hr.leave:view", "hr.leave:create", "hr.leave:approve", "hr.appraisals:view", "hr.appraisals:edit"];
+/**
+ * Anyone on staff can see the org chart — who is in which department is not
+ * confidential inside a school.
+ *
+ * Deliberately NOT including hr.leave here. "Let a teacher file their own
+ * leave" needs an attribute policy that scopes hr.leave to the requester's
+ * own staff record, and that policy doesn't exist yet (same missing piece as
+ * the student/parent portal's "own records only"). Granting hr.leave:view
+ * without it would let every teacher read every colleague's leave history,
+ * and hr.leave:create would let them file leave in someone else's name.
+ * Until the scope exists, staff leave stays with HR and school leadership.
+ */
+const HR_SELF = ["hr.org:view"];
+
 const ORG_ADMIN_SET = FOUNDATION_ALL.filter((key) => key !== "platform.organizations:create");
 
 export const SYSTEM_ROLES: SystemRoleDef[] = [
@@ -182,13 +214,13 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     key: "platform_admin",
     name: "Platform Admin",
     description: "SaaS operations: all tenants, billing, feature flags",
-    permissions: [...FOUNDATION_ALL, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL],
+    permissions: [...FOUNDATION_ALL, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL],
   },
   {
     key: "organization_admin",
     name: "Organization Admin",
     description: "Trust/group administration across all branches",
-    permissions: [...ORG_ADMIN_SET, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL],
+    permissions: [...ORG_ADMIN_SET, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL],
   },
   {
     key: "principal",
@@ -214,6 +246,8 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       ...LMS_READ,
       "lms.grades:export",
       ...CONNECT_ALL,
+      ...HR_LEADERSHIP,
+      "hr.payroll:view",
     ],
   },
   {
@@ -235,6 +269,7 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       ...LMS_READ,
       "lms.grades:export",
       ...CONNECT_SENDER,
+      ...HR_LEADERSHIP,
     ],
   },
   {
@@ -255,13 +290,14 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       ...FINANCE_CASHIER,
       ...LMS_READ,
       ...CONNECT_SENDER,
+      ...HR_SELF,
     ],
   },
   {
     key: "teacher",
     name: "Teacher",
     description: "Teaching and assessment for assigned classes/subjects",
-    permissions: ["sis.students:view", "sis.guardians:view", "academics.structure:view", ...TEACHER_ACADEMICS, ...LMS_TEACHER],
+    permissions: ["sis.students:view", "sis.guardians:view", "academics.structure:view", ...TEACHER_ACADEMICS, ...LMS_TEACHER, ...HR_SELF],
   },
   {
     key: "class_teacher",
@@ -278,6 +314,7 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       ...CONNECT_READ,
       "connect.broadcasts:create",
       "connect.broadcasts:message",
+      ...HR_SELF,
     ],
   },
   {
@@ -286,7 +323,7 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     description: "Fees and finance",
     permissions: ["sis.students:view", "sis.guardians:view", ...FINANCE_ALL],
   },
-  { key: "hr_manager", name: "HR Manager", description: "Employee lifecycle", permissions: ["sis.staff:view", "sis.staff:create", "sis.staff:edit", "sis.staff:delete"] },
+  { key: "hr_manager", name: "HR Manager", description: "Employee lifecycle", permissions: ["sis.staff:view", "sis.staff:create", "sis.staff:edit", "sis.staff:delete", ...HR_ALL] },
   { key: "librarian", name: "Librarian", description: "Library operations", permissions: ["sis.students:view"] },
   { key: "transport_manager", name: "Transport Manager", description: "Routes and vehicles", permissions: ["sis.students:view"] },
   { key: "hostel_warden", name: "Hostel Warden", description: "Hostel administration", permissions: ["sis.students:view"] },

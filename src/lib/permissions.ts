@@ -163,6 +163,27 @@ export const PERMISSIONS: PermissionDef[] = [
 
   { module: "connect.settings", action: "view", description: "View quiet hours and consent settings" },
   { module: "connect.settings", action: "configure", description: "Set quiet hours and guardian opt-outs" },
+
+  // --- Phase 7: HR ----------------------------------------------------------
+  { module: "hr.org", action: "view", description: "View departments and positions" },
+  { module: "hr.org", action: "configure", description: "Create departments and positions, and assign staff to them" },
+
+  { module: "hr.compensation", action: "view", description: "View staff salaries" },
+  { module: "hr.compensation", action: "edit", description: "Set a staff member's monthly gross pay" },
+
+  { module: "hr.leave", action: "view", description: "View staff leave requests" },
+  { module: "hr.leave", action: "create", description: "Record a staff leave request" },
+  { module: "hr.leave", action: "approve", description: "Approve or reject staff leave" },
+
+  { module: "hr.payroll", action: "view", description: "View payroll runs and payslips" },
+  { module: "hr.payroll", action: "create", description: "Open a payroll run and generate payslips" },
+  { module: "hr.payroll", action: "approve", description: "Process a payroll run and mark it paid" },
+  { module: "hr.payroll", action: "export", description: "Export a payroll run as CSV" },
+
+  { module: "hr.appraisals", action: "view", description: "View staff appraisals" },
+  { module: "hr.appraisals", action: "edit", description: "Record a staff appraisal" },
+
+  { module: "hr.exit", action: "edit", description: "Record a staff exit" },
 ];
 
 export function permissionKey(module: string, action: Action): string {
