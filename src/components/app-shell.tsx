@@ -71,6 +71,17 @@ export function AppShell({
   return (
     <div className="flex min-h-screen flex-1">
       {/*
+        A keyboard user should not have to tab through every nav item on
+        every page to reach the content. The link is visually hidden until
+        focused, which is the only state in which it is useful.
+      */}
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-zinc-900 focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-white dark:focus:bg-zinc-100 dark:focus:text-zinc-900"
+      >
+        Skip to content
+      </a>
+      {/*
         The sidebar is a drawer below `sm` and a fixed column above it. It is
         a <details> rather than client state on purpose: the shell is a server
         component, and a disclosure element gives a working menu with no
@@ -82,7 +93,7 @@ export function AppShell({
           <span className="text-xs font-medium uppercase tracking-wide text-zinc-500 group-open:hidden">Menu</span>
           <span className="hidden text-xs font-medium uppercase tracking-wide text-zinc-500 group-open:inline">Close</span>
         </summary>
-        <nav className="flex flex-col gap-0.5 border-t border-zinc-200 p-2 dark:border-zinc-800">
+        <nav aria-label="Main" className="flex flex-col gap-0.5 border-t border-zinc-200 p-2 dark:border-zinc-800">
           {NAV_SECTIONS.map((item) => {
             const flagOn = !item.flag || enabledFlags.has(item.flag);
             if (!item.href || !flagOn || !permits(item, permissions)) return null;
@@ -103,7 +114,7 @@ export function AppShell({
           <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">MCBPulse</p>
           <p className="mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">{organizationName ?? "No organization"}</p>
         </div>
-        <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+        <nav aria-label="Main" className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
           {NAV_SECTIONS.map((item) => {
             const flagOn = !item.flag || enabledFlags.has(item.flag);
             const permitted = permits(item, permissions);
@@ -154,7 +165,7 @@ export function AppShell({
           <span className="truncate text-sm text-zinc-600 dark:text-zinc-300">{userName}</span>
           <SignOutButton />
         </header>
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
+        <main id="main" className="flex-1 overflow-y-auto p-4 sm:p-6">{children}</main>
       </div>
     </div>
   );

@@ -144,7 +144,18 @@ phase gets its own schema slice and its own pass, not one giant change.
     repeated on the export route rather than inherited from the page. Gated
     by `phase11.analytics` and 3 `analytics.*` permissions. Code in
     `src/modules/analytics/`.
-13. **Phase 12+ — schema only.** Examcell (question banks, papers, online
+13. **Phase 12 (Hardening) — partly done, and the rest is written down.**
+    Security headers with a real CSP (`frame-ancestors none`,
+    `form-action self`, HSTS in production, no `X-Powered-By`); **login
+    throttling** keyed on IP *and* email so neither an office behind one NAT
+    nor a targeted user can be locked out; a `/api/health` liveness and
+    readiness endpoint that returns 503 when the database is unreachable and
+    deliberately reveals nothing else; skip links and nav landmarks on both
+    shells. What is still missing — 2FA, a nonce-based CSP, Redis-backed
+    rate limiting, alerting, a load test, a screen-reader pass — is listed
+    honestly in [`docs/operations-runbook.md`](docs/operations-runbook.md)
+    alongside backup/restore, migration rollback and an incident checklist.
+14. **Examcell — still not built.** Examcell (question banks, papers, online
     exam attempts) and the rest of blueprint section 8 (Files, AI) exist in
     `prisma/schema.prisma` and migrate cleanly. **No route or business logic
     touches any of it yet.**

@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "MCBPulse",
-  description: "School Operating System — Phase 0 foundation",
+  description: "School Operating System",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -37,6 +37,12 @@ export default async function PortalLayout({ children }: { children: React.React
   return (
     <Providers>
       <div className="flex min-h-screen flex-col bg-white dark:bg-zinc-950">
+        <a
+          href="#main"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-md focus:bg-zinc-900 focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-white dark:focus:bg-zinc-100 dark:focus:text-zinc-900"
+        >
+          Skip to content
+        </a>
         <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-950">
           <Link href="/portal" className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
             MCBPulse
@@ -48,7 +54,7 @@ export default async function PortalLayout({ children }: { children: React.React
         </header>
 
         {tabs.length > 1 ? (
-          <nav className="hidden border-b border-zinc-200 px-4 sm:block dark:border-zinc-800">
+          <nav aria-label="Sections" className="hidden border-b border-zinc-200 px-4 sm:block dark:border-zinc-800">
             <ul className="flex gap-1">
               {tabs.map((t) => (
                 <li key={t.href}>
@@ -65,10 +71,10 @@ export default async function PortalLayout({ children }: { children: React.React
         ) : null}
 
         {/* pb-20 leaves room for the bottom bar on small screens. */}
-        <main className="flex-1 px-4 pb-20 pt-4 sm:pb-6">{children}</main>
+        <main id="main" className="flex-1 px-4 pb-20 pt-4 sm:pb-6">{children}</main>
 
         {tabs.length > 1 ? (
-          <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-zinc-200 bg-white sm:hidden dark:border-zinc-800 dark:bg-zinc-950">
+          <nav aria-label="Sections" className="fixed inset-x-0 bottom-0 z-10 border-t border-zinc-200 bg-white sm:hidden dark:border-zinc-800 dark:bg-zinc-950">
             <ul className="flex">
               {tabs.map((t) => (
                 <li key={t.href} className="flex-1">

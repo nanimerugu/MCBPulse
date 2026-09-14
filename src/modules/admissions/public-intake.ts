@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { recordAuditEvent } from "@/lib/audit";
 import { isFeatureEnabled } from "@/lib/feature-flags";
+import { checkRateLimit, PUBLIC_FORM_RULE } from "@/lib/rate-limit";
 import { ADMISSIONS_FLAG } from "@/modules/sis/access";
 import { DuplicateLeadError, createLead, findOrCreateSource } from "@/modules/admissions/leads.service";
 import type { PublicEnquiryInput } from "@/modules/admissions/schemas";
@@ -15,24 +16,18 @@ import type { PublicEnquiryInput } from "@/modules/admissions/schemas";
  *     already known (a duplicate is logged against the existing lead and
  *     the form still says "thank you").
  * The rate limiter is in-process — fine for one server; move it to Redis
- * (blueprint section 6) before running more than one instance.
+ * (blueprint section 6) before running more than one instance. It is shared
+ * with the login form: see src/lib/rate-limit.ts.
  */
 
-const WINDOW_MS = 10 * 60 * 1000;
-const MAX_PER_WINDOW = 5;
-const hits = new Map<string, number[]>();
-
+/**
+ * Kept as a named export so the route reads the same, but the counting now
+ * lives in src/lib/rate-limit.ts — Phase 12 needed the same logic on the
+ * login form, and two implementations of "have they done this too often"
+ * is one more than a system should have.
+ */
 export function rateLimited(ip: string, now = Date.now()): boolean {
-  const recent = (hits.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
-  if (recent.length >= MAX_PER_WINDOW) {
-    hits.set(ip, recent);
-    return true;
-  }
-  recent.push(now);
-  hits.set(ip, recent);
-  // Keep the map from growing without bound across a long-lived process.
-  if (hits.size > 10_000) for (const [k, v] of hits) if (v.every((t) => now - t >= WINDOW_MS)) hits.delete(k);
-  return false;
+  return checkRateLimit(`enquiry:${ip}`, PUBLIC_FORM_RULE, now).limited;
 }
 
 export async function resolvePublicBranch(orgSlug: string, branchCode: string) {
