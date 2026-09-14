@@ -345,9 +345,9 @@ before this touches anything real.
     uniformity nobody has asked for would risk all six. What it adds is
     **trigger → condition → action**: a school can say "when a payment over
     ₹1,000 is received, thank the family" without anyone writing code.
-    Conditions compare numerically when both sides are numbers (so 
+    Conditions compare numerically when both sides are numbers (so `9 > 10`
     is false, not true), a missing fact is always false so a rule never
-    fires by accident, and an unknown  is left visible so a
+    fires by accident, and an unknown `{{placeholder}}` is left visible so a
     broken rule looks broken. Every evaluation is recorded, matched or not,
     so "why didn't my rule fire?" has an answer. Emitting is best-effort:
     a rule can never roll back the payment that triggered it. Gated by
