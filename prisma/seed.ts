@@ -365,6 +365,77 @@ async function main() {
     await db.account.upsert({ where: { organizationId_code: { organizationId: org.id, code } }, create: { organizationId: org.id, code, name: accName, type }, update: {} });
   }
 
+  console.log("Seeding demo LMS...");
+  // One course per subject the demo teacher actually teaches, so the
+  // gradebook and the attribute policy have something real to work with.
+  const mathsCourse =
+    (await db.course.findFirst({ where: { organizationId: org.id, title: "Mathematics — Grade 5", deletedAt: null } })) ??
+    (await db.course.create({
+      data: {
+        organizationId: org.id,
+        title: "Mathematics — Grade 5",
+        description: "Number, fractions and early geometry for Grade 5.",
+        subjectId: subjectIds.get("MAT")!,
+        gradeId: gradesForFees.find((g) => g.name === "Grade 5")?.id ?? null,
+      },
+    }));
+  let fractions = await db.courseModule.findFirst({ where: { courseId: mathsCourse.id, title: "Fractions" } });
+  if (!fractions) {
+    fractions = await db.courseModule.create({ data: { courseId: mathsCourse.id, title: "Fractions", sequence: 1 } });
+    await db.lesson.createMany({
+      data: [
+        { courseModuleId: fractions.id, title: "Equivalent fractions", sequence: 1, content: "Same value, different numerator and denominator." },
+        { courseModuleId: fractions.id, title: "Adding unlike fractions", sequence: 2, content: "Find a common denominator first." },
+      ],
+    });
+  }
+
+  const g5a = sectionIds.get("Grade 5|A")!;
+  // A published assignment that is already partly graded, and a draft — the
+  // two states the assignment screens need to show.
+  let worksheet = await db.assignment.findFirst({ where: { courseId: mathsCourse.id, title: "Fractions worksheet 1" } });
+  if (!worksheet) {
+    worksheet = await db.assignment.create({
+      data: {
+        courseId: mathsCourse.id,
+        sectionId: g5a,
+        createdByStaffId: teacherStaff.id,
+        title: "Fractions worksheet 1",
+        instructions: "Questions 1–12 from the workbook.",
+        dueAt: new Date(`${now.getFullYear()}-09-11T23:59:00.000Z`),
+        maxMarks: 20,
+        publishedAt: new Date(`${now.getFullYear()}-09-04T09:00:00.000Z`),
+      },
+    });
+    const priya = await db.student.findFirst({ where: { organizationId: org.id, admissionNumber: "N-1001" } });
+    if (priya) {
+      await db.submission.create({
+        data: {
+          assignmentId: worksheet.id,
+          studentId: priya.id,
+          status: "GRADED",
+          submittedAt: new Date(`${now.getFullYear()}-09-10T18:00:00.000Z`),
+          marksAwarded: 17,
+          feedback: "Neat work — watch the common denominators in Q9.",
+          gradedAt: new Date(`${now.getFullYear()}-09-12T10:00:00.000Z`),
+          gradedByStaffId: teacherStaff.id,
+        },
+      });
+    }
+  }
+  if (!(await db.assignment.findFirst({ where: { courseId: mathsCourse.id, title: "Fractions quiz (draft)" } }))) {
+    await db.assignment.create({
+      data: {
+        courseId: mathsCourse.id,
+        sectionId: g5a,
+        createdByStaffId: teacherStaff.id,
+        title: "Fractions quiz (draft)",
+        dueAt: new Date(`${now.getFullYear()}-09-25T23:59:00.000Z`),
+        maxMarks: 10,
+      },
+    });
+  }
+
   console.log("Seeding feature flags...");
   // Phase 1 shipped, so SIS defaults on. An organization can still switch it
   // off with a FeatureFlagOverride — that's what the flag is for.
@@ -386,6 +457,11 @@ async function main() {
   await db.featureFlag.upsert({
     where: { key: "phase4.finance" },
     create: { key: "phase4.finance", description: "Finance: fee structures, invoices, payments & receipts, refunds, ledger (Phase 4)", defaultEnabled: true },
+    update: { defaultEnabled: true },
+  });
+  await db.featureFlag.upsert({
+    where: { key: "phase5.lms" },
+    create: { key: "phase5.lms", description: "Learning: courses, assignments, grading, gradebook (Phase 5)", defaultEnabled: true },
     update: { defaultEnabled: true },
   });
   await db.featureFlag.upsert({

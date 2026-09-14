@@ -4,9 +4,9 @@
  * = null`) and then assigned to users per-organization via RoleAssignment.
  *
  * Grants accrue phase by phase: Phase 0 (foundation), Phase 1 (SIS), Phase 2
- * (Academics), Phase 3 (Admissions), Phase 4 (Finance). Roles whose modules
- * haven't been built yet (Librarian, Transport Manager, ...) still have
- * view-only or empty grants.
+ * (Academics), Phase 3 (Admissions), Phase 4 (Finance), Phase 5 (LMS). Roles
+ * whose modules haven't been built yet (Librarian, Transport Manager, ...)
+ * still have view-only or empty grants.
  *
  * Teacher and Class Teacher are SECTION-SCOPED roles (see
  * SECTION_SCOPED_ROLE_KEYS in src/lib/rbac.ts): when every role granting a
@@ -126,6 +126,32 @@ const FINANCE_READ = ["finance.fee_structures:view", "finance.concessions:view",
 /** A front-office cashier: sees dues, takes money, issues receipts. No refunds, no structure changes. */
 const FINANCE_CASHIER = ["finance.invoices:view", "finance.payments:view", "finance.payments:pay"];
 
+const LMS_ALL = [
+  "lms.courses:view",
+  "lms.courses:create",
+  "lms.courses:edit",
+  "lms.assignments:view",
+  "lms.assignments:create",
+  "lms.assignments:edit",
+  "lms.assignments:publish",
+  "lms.grades:view",
+  "lms.grades:edit",
+  "lms.grades:export",
+];
+/** A teacher authors and grades their own sections' work; scoping does the limiting. */
+const LMS_TEACHER = [
+  "lms.courses:view",
+  "lms.courses:create",
+  "lms.courses:edit",
+  "lms.assignments:view",
+  "lms.assignments:create",
+  "lms.assignments:edit",
+  "lms.assignments:publish",
+  "lms.grades:view",
+  "lms.grades:edit",
+];
+const LMS_READ = ["lms.courses:view", "lms.assignments:view", "lms.grades:view"];
+
 const ORG_ADMIN_SET = FOUNDATION_ALL.filter((key) => key !== "platform.organizations:create");
 
 export const SYSTEM_ROLES: SystemRoleDef[] = [
@@ -133,13 +159,13 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     key: "platform_admin",
     name: "Platform Admin",
     description: "SaaS operations: all tenants, billing, feature flags",
-    permissions: [...FOUNDATION_ALL, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL],
+    permissions: [...FOUNDATION_ALL, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL],
   },
   {
     key: "organization_admin",
     name: "Organization Admin",
     description: "Trust/group administration across all branches",
-    permissions: [...ORG_ADMIN_SET, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL],
+    permissions: [...ORG_ADMIN_SET, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL],
   },
   {
     key: "principal",
@@ -162,6 +188,8 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       "finance.concessions:approve",
       "finance.payments:refund",
       "finance.ledger:view",
+      ...LMS_READ,
+      "lms.grades:export",
     ],
   },
   {
@@ -180,6 +208,8 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       ...ADMISSIONS_READ,
       "admissions.applications:approve",
       ...FINANCE_READ,
+      ...LMS_READ,
+      "lms.grades:export",
     ],
   },
   {
@@ -198,13 +228,14 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       ...ACADEMICS_READ,
       ...ADMISSIONS_COUNSELOR,
       ...FINANCE_CASHIER,
+      ...LMS_READ,
     ],
   },
   {
     key: "teacher",
     name: "Teacher",
     description: "Teaching and assessment for assigned classes/subjects",
-    permissions: ["sis.students:view", "sis.guardians:view", "academics.structure:view", ...TEACHER_ACADEMICS],
+    permissions: ["sis.students:view", "sis.guardians:view", "academics.structure:view", ...TEACHER_ACADEMICS, ...LMS_TEACHER],
   },
   {
     key: "class_teacher",
@@ -216,6 +247,8 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       "academics.structure:view",
       ...TEACHER_ACADEMICS,
       "academics.attendance:approve",
+      ...LMS_TEACHER,
+      "lms.grades:export",
     ],
   },
   {

@@ -5,7 +5,7 @@ import { AppShell } from "@/components/app-shell";
 import { Providers } from "@/components/providers";
 
 /** Flags the nav cares about. Add a key here when a shipped module gets one. */
-const NAV_FLAGS = ["phase1.sis", "phase2.academics", "phase3.admissions", "phase4.finance"] as const;
+const NAV_FLAGS = ["phase1.sis", "phase2.academics", "phase3.admissions", "phase4.finance", "phase5.lms"] as const;
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const viewer = await getViewerContext();

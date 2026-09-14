@@ -134,6 +134,20 @@ export const PERMISSIONS: PermissionDef[] = [
   { module: "finance.payments", action: "refund", description: "Approve and process refunds" },
 
   { module: "finance.ledger", action: "view", description: "View the chart of accounts and journal" },
+
+  // --- Phase 5: LMS ---------------------------------------------------------
+  { module: "lms.courses", action: "view", description: "View courses, modules and lessons" },
+  { module: "lms.courses", action: "create", description: "Create a course, module or lesson" },
+  { module: "lms.courses", action: "edit", description: "Edit course content" },
+
+  { module: "lms.assignments", action: "view", description: "View assignments" },
+  { module: "lms.assignments", action: "create", description: "Create an assignment for a section" },
+  { module: "lms.assignments", action: "edit", description: "Edit or delete an unpublished assignment" },
+  { module: "lms.assignments", action: "publish", description: "Publish an assignment to a section" },
+
+  { module: "lms.grades", action: "view", description: "View submissions and the gradebook" },
+  { module: "lms.grades", action: "edit", description: "Record submissions, marks and feedback" },
+  { module: "lms.grades", action: "export", description: "Export the gradebook as CSV" },
 ];
 
 export function permissionKey(module: string, action: Action): string {

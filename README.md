@@ -60,10 +60,20 @@ phase gets its own schema slice and its own pass, not one giant change.
    minor units end to end (`src/modules/finance/money.ts`), never floats.
    Gated by `phase4.finance` and 12 `finance.*` permissions. Code in
    `src/modules/finance/` and `src/app/(app)/finance/`.
-6. **Phase 5+ — schema only.** The rest of the canonical data model from
-   blueprint section 8 (LMS, Assessment, HR, Operations, Communication,
-   Files, AI) exists in `prisma/schema.prisma` and migrates cleanly. **No
-   route or business logic touches any of it yet.**
+6. **Phase 5 (LMS) — working, in part.** The teaching loop end to end:
+   courses with modules and lessons (an organization-wide catalog, shared by
+   every section that teaches them); assignments targeted at a section, with
+   a **draft → published** state; a grading roster covering the whole class
+   (not just rows that happen to exist) with derived submission status,
+   late detection, mark validation and an **optimistic lock** per
+   submission; and a per-section **gradebook** with CSV export whose average
+   counts graded work only. Gated by `phase5.lms` and 10 `lms.*` permissions,
+   and section-scoped for teachers by the Phase 2 attribute policy. Code in
+   `src/modules/lms/` and `src/app/(app)/lms/`.
+7. **Phase 6+ — schema only.** Examcell (question banks, papers, online
+   exam attempts) and the rest of blueprint section 8 (HR, Operations,
+   Communication, Files, AI) exist in `prisma/schema.prisma` and migrate
+   cleanly. **No route or business logic touches any of it yet.**
 
 ## Stack
 
@@ -156,7 +166,9 @@ before this touches anything real.
 | Money in integer minor units; invoice/status/posting rules (pure, tested) | [`src/modules/finance/money.ts`](src/modules/finance/money.ts) |
 | Payments: optimistic lock, auto receipt, status recompute, balanced journal posting — one transaction | [`src/modules/finance/payments.service.ts`](src/modules/finance/payments.service.ts) |
 | Double-entry ledger and trial balance | [`src/modules/finance/ledger.service.ts`](src/modules/finance/ledger.service.ts) |
-| **Schema only:** canonical data model for the Phase 5+ domains (part of 72 tables / 29 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
+| Grading rules: derived submission status, late detection, mark validation, graded-only averaging (pure, tested) | [`src/modules/lms/grading.ts`](src/modules/lms/grading.ts) |
+| Grading roster: whole-class rows, validate-all-before-writing-any, per-submission optimistic lock | [`src/modules/lms/assignments.service.ts`](src/modules/lms/assignments.service.ts) |
+| **Schema only:** canonical data model for the Phase 6+ domains (part of 72 tables / 29 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
 
 ## Known limitations / follow-ups
 
@@ -171,9 +183,25 @@ before this touches anything real.
   did *not* emit that DROP — live-DB introspection skips indexes it can't
   represent — but `migrate dev`'s shadow-replay path may still differ, so
   the check stands.)
-- **Phase 5+ tables have no RBAC permissions yet.** `src/lib/permissions.ts`
-  lists foundation, SIS, Academics, Admissions and Finance modules. Adding a
-  module's permissions belongs with the code that first checks them.
+- **Phase 6+ tables have no RBAC permissions yet.** `src/lib/permissions.ts`
+  lists foundation, SIS, Academics, Admissions, Finance and LMS modules.
+  Adding a module's permissions belongs with the code that first checks them.
+- **Students don't submit their own work.** Teachers record submissions and
+  marks, which matches how offline work actually arrives and how §10.3
+  describes the teacher's day. A student-facing portal needs student logins
+  plus a third attribute policy ("own records only") and is its own slice —
+  the same slice that would give parents a view.
+- **Examcell is not built.** Question banks, paper generation, online exam
+  attempts and invigilation (blueprint 11.15) are the other half of the
+  blueprint's Phase 5 line. The tables exist; nothing reads them. Report
+  cards and holistic reporting depend on it.
+- **The gradebook shows percentages, not letter grades.** Deliberate: 11.14
+  says to "support curriculum-specific grading engines rather than
+  hard-coding one grading model", and CBSE, IB and Cambridge disagree about
+  what 78% is called. A grading engine per curriculum is the right home for
+  that.
+- **Lesson content is plain text.** File and video resources need the Files
+  storage adapter; `LessonResource` exists and nothing writes it.
 - **The public enquiry form has no OTP and no CAPTCHA.** Blueprint 10.5 wants
   mobile/email OTP validation; that needs an SMS/email provider (Phase 6
   Connect). Today it has a honeypot, a per-IP rate limit (in-process — move

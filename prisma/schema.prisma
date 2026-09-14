@@ -535,13 +535,15 @@ model Staff {
   joinDate     DateTime
   exitDate     DateTime?
 
-  subjectAssignments SubjectAssignment[]
-  timetableSlots     TimetableSlot[]
-  attendanceSessions AttendanceSession[]
-  payslips           Payslip[]
-  appraisals         Appraisal[]
-  vehiclesDriven     Vehicle[]
-  leaveRequests      LeaveRequest[]
+  subjectAssignments  SubjectAssignment[]
+  timetableSlots      TimetableSlot[]
+  attendanceSessions  AttendanceSession[]
+  payslips            Payslip[]
+  appraisals          Appraisal[]
+  vehiclesDriven      Vehicle[]
+  leaveRequests       LeaveRequest[]
+  assignmentsAuthored Assignment[]        @relation("AssignmentAuthor")
+  submissionsGraded   Submission[]        @relation("SubmissionGrader")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -562,6 +564,7 @@ model Grade {
 
   sections      Section[]
   feeStructures FeeStructure[]
+  courses       Course[]
 
   createdAt DateTime  @default(now())
   deletedAt DateTime?
@@ -606,6 +609,7 @@ model Subject {
   timetableSlots     TimetableSlot[]
   questionBanks      QuestionBank[]
   exams              Exam[]
+  courses            Course[]
 
   createdAt DateTime  @default(now())
   deletedAt DateTime?
@@ -913,8 +917,17 @@ model Course {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   curriculumId   String?
   curriculum     Curriculum?  @relation(fields: [curriculumId], references: [id], onDelete: SetNull)
+  // A course is normally "Mathematics, Grade 5" — tying it to the Academics
+  // catalog is what lets the gradebook group by subject and the course list
+  // filter by grade. Both optional: a general-studies course belongs to
+  // neither.
+  subjectId      String?
+  subject        Subject?     @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  gradeId        String?
+  grade          Grade?       @relation(fields: [gradeId], references: [id], onDelete: SetNull)
 
-  title String
+  title       String
+  description String?
 
   modules     CourseModule[]
   enrollments Enrollment[]
@@ -979,16 +992,23 @@ model Enrollment {
 }
 
 model Assignment {
-  id        String   @id @default(uuid())
-  courseId  String
-  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  sectionId String?
-  section   Section? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  id               String   @id @default(uuid())
+  courseId         String
+  course           Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  sectionId        String?
+  section          Section? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  // Who set it. Restrict rather than cascade: an assignment must not vanish
+  // because a teacher record was removed.
+  createdByStaffId String?
+  createdByStaff   Staff?   @relation("AssignmentAuthor", fields: [createdByStaffId], references: [id], onDelete: SetNull)
 
   title        String
   instructions String?
   dueAt        DateTime
   maxMarks     Int
+  // Draft until published (blueprint 10.3: "create assignment/test ->
+  // publish"). Only a published assignment is gradeable or visible as work.
+  publishedAt  DateTime?
 
   submissions Submission[]
 
@@ -1010,12 +1030,18 @@ model Submission {
   studentId    String
   student      Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
-  status       SubmissionStatus @default(PENDING)
-  submittedAt  DateTime?
-  fileAssetId  String?
-  fileAsset    FileAsset?       @relation(fields: [fileAssetId], references: [id], onDelete: SetNull)
-  marksAwarded Int?
-  feedback     String?
+  status          SubmissionStatus @default(PENDING)
+  submittedAt     DateTime?
+  fileAssetId     String?
+  fileAsset       FileAsset?       @relation(fields: [fileAssetId], references: [id], onDelete: SetNull)
+  marksAwarded    Int?
+  feedback        String?
+  // Two teachers can grade the same section's work at once, so this is a
+  // high-conflict row in the same sense as AttendanceRecord (section 9).
+  version         Int              @default(1)
+  gradedAt        DateTime?
+  gradedByStaffId String?
+  gradedByStaff   Staff?           @relation("SubmissionGrader", fields: [gradedByStaffId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

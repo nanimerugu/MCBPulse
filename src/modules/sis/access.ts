@@ -11,6 +11,7 @@ export const SIS_FLAG = "phase1.sis";
 export const ACADEMICS_FLAG = "phase2.academics";
 export const ADMISSIONS_FLAG = "phase3.admissions";
 export const FINANCE_FLAG = "phase4.finance";
+export const LMS_FLAG = "phase5.lms";
 
 export interface ModuleAccess {
   viewer: ViewerContext;
@@ -108,6 +109,11 @@ export const loadFinanceAccess = (requestedBranchId: string | undefined, module:
   loadModuleAccess(requestedBranchId, FINANCE_FLAG, module, action);
 export const requireFinanceAccessForAction = (branchId: string | undefined, module: string, action: Action) =>
   requireModuleAccessForAction(branchId, FINANCE_FLAG, module, action);
+
+export const loadLmsAccess = (requestedBranchId: string | undefined, module: string, action: Action) =>
+  loadModuleAccess(requestedBranchId, LMS_FLAG, module, action);
+export const requireLmsAccessForAction = (branchId: string | undefined, module: string, action: Action) =>
+  requireModuleAccessForAction(branchId, LMS_FLAG, module, action);
 
 export function actorOf(access: ModuleAccess): Actor {
   return { userId: access.viewer.userId, organizationId: access.ctx.organizationId };
