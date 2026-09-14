@@ -710,8 +710,8 @@ async function main() {
   });
   await db.featureFlag.upsert({
     where: { key: "ai.copilot" },
-    create: { key: "ai.copilot", description: "AI Gateway / school copilot (Phase 10)", defaultEnabled: false },
-    update: {},
+    create: { key: "ai.copilot", description: "AI Gateway: capabilities, redaction, usage accounting (Phase 10)", defaultEnabled: true },
+    update: { defaultEnabled: true },
   });
 
   console.log("\nSeed complete.\n");

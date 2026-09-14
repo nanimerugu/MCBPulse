@@ -210,6 +210,13 @@ export const PERMISSIONS: PermissionDef[] = [
   // automatic business reading medical complaints.
   { module: "ops.infirmary", action: "view", description: "View infirmary visits" },
   { module: "ops.infirmary", action: "edit", description: "Record an infirmary visit" },
+
+  // --- Phase 10: AI --------------------------------------------------------
+  // Using an AI capability ALSO requires the permission guarding the records
+  // it touches (see src/modules/ai/capabilities.ts) — this pair only decides
+  // who may open the AI console and who may see what it has cost.
+  { module: "ai.console", action: "view", description: "Open the AI assistant" },
+  { module: "ai.usage", action: "view", description: "View AI usage, cost and generation history" },
 ];
 
 export function permissionKey(module: string, action: Action): string {

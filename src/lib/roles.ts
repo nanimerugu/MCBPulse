@@ -5,7 +5,7 @@
  *
  * Grants accrue phase by phase: Phase 0 (foundation), Phase 1 (SIS), Phase 2
  * (Academics), Phase 3 (Admissions), Phase 4 (Finance), Phase 5 (LMS),
- * Phase 6 (Connect), Phase 7 (HR), Phase 8 (Operations), Phase 9 (portal). Roles whose modules haven't been built yet (Librarian,
+ * Phase 6 (Connect), Phase 7 (HR), Phase 8 (Operations), Phase 9 (portal), Phase 10 (AI). Roles whose modules haven't been built yet (Librarian,
  * Transport Manager, ...) still have view-only or empty grants.
  *
  * Teacher and Class Teacher are SECTION-SCOPED roles (see
@@ -215,6 +215,8 @@ const OPS_VISITORS = ["ops.visitors:view", "ops.visitors:edit"];
 const OPS_INFIRMARY = ["ops.infirmary:view", "ops.infirmary:edit"];
 const OPS_ALL = [...OPS_LIBRARY, ...OPS_INVENTORY, ...OPS_TRANSPORT, ...OPS_HOSTEL, ...OPS_VISITORS, ...OPS_INFIRMARY];
 /** Leadership sees how the campus is running without operating it. */
+const AI_ALL = ["ai.console:view", "ai.usage:view"];
+
 const OPS_READ = ["ops.library:view", "ops.inventory:view", "ops.transport:view", "ops.hostel:view", "ops.visitors:view"];
 
 const ORG_ADMIN_SET = FOUNDATION_ALL.filter((key) => key !== "platform.organizations:create");
@@ -224,13 +226,13 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
     key: "platform_admin",
     name: "Platform Admin",
     description: "SaaS operations: all tenants, billing, feature flags",
-    permissions: [...FOUNDATION_ALL, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL, ...OPS_ALL],
+    permissions: [...FOUNDATION_ALL, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL, ...OPS_ALL, ...AI_ALL],
   },
   {
     key: "organization_admin",
     name: "Organization Admin",
     description: "Trust/group administration across all branches",
-    permissions: [...ORG_ADMIN_SET, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL, ...OPS_ALL],
+    permissions: [...ORG_ADMIN_SET, ...SIS_ALL, ...ACADEMICS_ALL, ...ADMISSIONS_ALL, ...FINANCE_ALL, ...LMS_ALL, ...CONNECT_ALL, ...HR_ALL, ...OPS_ALL, ...AI_ALL],
   },
   {
     key: "principal",
@@ -259,6 +261,7 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       ...HR_LEADERSHIP,
       "hr.payroll:view",
       ...OPS_ALL,
+      ...AI_ALL,
     ],
   },
   {
@@ -304,13 +307,14 @@ export const SYSTEM_ROLES: SystemRoleDef[] = [
       ...CONNECT_SENDER,
       ...HR_SELF,
       "ops.library:view",
+      "ai.console:view",
     ],
   },
   {
     key: "teacher",
     name: "Teacher",
     description: "Teaching and assessment for assigned classes/subjects",
-    permissions: ["sis.students:view", "sis.guardians:view", "academics.structure:view", ...TEACHER_ACADEMICS, ...LMS_TEACHER, ...HR_SELF],
+    permissions: ["sis.students:view", "sis.guardians:view", "academics.structure:view", ...TEACHER_ACADEMICS, ...LMS_TEACHER, ...HR_SELF, "ai.console:view"],
   },
   {
     key: "class_teacher",

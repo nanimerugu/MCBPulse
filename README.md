@@ -119,7 +119,19 @@ phase gets its own schema slice and its own pass, not one giant change.
     [`src/modules/portal/scope.ts`](src/modules/portal/scope.ts) turns the
     viewer's identity into the exact set of student ids they may see —
     before any query runs, so it fails closed. Gated by `phase9.portal`.
-11. **Phase 10+ — schema only.** Examcell (question banks, papers, online
+11. **Phase 10 (AI) — the gateway is real; no model is connected.** An AI
+    Gateway (blueprint §7, §21 rule 14) that every AI request goes through:
+    permission → redact → fence → provider → account → audit. Capabilities
+    require the SAME permission as the records they touch, so AI can never be
+    a way around RBAC. Identifiers are redacted before anything is sent and
+    restored afterwards; retrieved school data is fenced as explicitly
+    untrusted so it cannot act as instructions; usage and token estimates are
+    recorded per request. **No provider is configured, so nothing is
+    generated** — the shipped adapter records instead, the same honest shape
+    as Connect. The gateway deliberately cannot write: every capability
+    returns text for a person to accept or reject. Gated by `ai.copilot` and
+    2 `ai.*` permissions. Code in `src/modules/ai/`.
+12. **Phase 11+ — schema only.** Examcell (question banks, papers, online
     exam attempts) and the rest of blueprint section 8 (Files, AI) exist in
     `prisma/schema.prisma` and migrate cleanly. **No route or business logic
     touches any of it yet.**

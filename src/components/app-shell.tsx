@@ -44,7 +44,7 @@ const NAV_SECTIONS: NavItem[] = [
   { label: "HR", href: "/hr", flag: "phase7.hr", permission: "hr.org:view" },
   { label: "Operations", href: "/operations", flag: "phase8.operations", permission: OPS_LANDING_PERMISSION_KEYS },
   { label: "Reports & Analytics", comingInPhase: "Phase 11" },
-  { label: "AI Copilot", comingInPhase: "Phase 10" },
+  { label: "AI Copilot", href: "/ai", flag: "ai.copilot", permission: "ai.console:view" },
 ];
 
 /**
