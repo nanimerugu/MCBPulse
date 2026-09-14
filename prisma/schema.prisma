@@ -1104,14 +1104,41 @@ model Question {
   questionBankId String
   questionBank   QuestionBank @relation(fields: [questionBankId], references: [id], onDelete: Cascade)
 
-  type          QuestionType
-  text          String
-  marks         Int
-  difficulty    QuestionDifficulty @default(MEDIUM)
-  correctAnswer String?
+  type       QuestionType
+  text       String
+  marks      Int
+  difficulty QuestionDifficulty @default(MEDIUM)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  // Free-text answer key for SHORT_ANSWER; for MCQ and TRUE_FALSE the truth
+  // lives on QuestionOption.isCorrect instead, so there is one place to look.
+  correctAnswer String?
+  /** Shown to the student after grading, not before. */
+  explanation String?
+
+  options  QuestionOption[]
+  inPapers ExamPaperQuestion[]
+  answers  ExamAnswer[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([questionBankId, type, difficulty])
+}
+
+/** Choices for an MCQ or TRUE_FALSE question. */
+model QuestionOption {
+  id         String   @id @default(uuid())
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  text      String
+  isCorrect Boolean @default(false)
+  sequence  Int
+
+  answers ExamAnswer[]
+
+  @@unique([questionId, sequence])
 }
 
 model Exam {
@@ -1125,6 +1152,8 @@ model Exam {
   scheduledAt     DateTime
   durationMinutes Int
   maxMarks        Int
+  status          ExamStatus @default(DRAFT)
+  instructions    String?
 
   papers   ExamPaper[]
   attempts ExamAttempt[]
@@ -1138,10 +1167,41 @@ model ExamPaper {
   examId String
   exam   Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
 
-  generatedFrom String // "manual" | "ai"
+  generatedFrom String // "manual" | "generated"
   version       Int    @default(1)
 
+  questions ExamPaperQuestion[]
+
   createdAt DateTime @default(now())
+
+  @@unique([examId, version])
+}
+
+/**
+ * A question's place on a paper. Marks are COPIED from the question rather
+ * than referenced: editing a question in the bank must never silently
+ * change the marks on a paper students have already sat.
+ */
+model ExamPaperQuestion {
+  id          String    @id @default(uuid())
+  examPaperId String
+  examPaper   ExamPaper @relation(fields: [examPaperId], references: [id], onDelete: Cascade)
+  questionId  String
+  question    Question  @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  sequence Int
+  marks    Int
+
+  answers ExamAnswer[]
+
+  @@unique([examPaperId, sequence])
+  @@unique([examPaperId, questionId])
+}
+
+enum ExamStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
 }
 
 enum ExamAttemptStatus {
@@ -1162,11 +1222,45 @@ model ExamAttempt {
   startedAt    DateTime?
   submittedAt  DateTime?
   marksAwarded Int?
+  gradedAt     DateTime?
+  gradedByStaffId String?
+
+  answers ExamAnswer[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([examId, studentId])
+}
+
+/**
+ * One answer. Objective questions are graded on submit; subjective ones wait
+ * for a teacher, which is why marksAwarded is nullable and autoGraded says
+ * which is which.
+ */
+model ExamAnswer {
+  id                  String            @id @default(uuid())
+  examAttemptId       String
+  examAttempt         ExamAttempt       @relation(fields: [examAttemptId], references: [id], onDelete: Cascade)
+  examPaperQuestionId String
+  examPaperQuestion   ExamPaperQuestion @relation(fields: [examPaperQuestionId], references: [id], onDelete: Cascade)
+  questionId          String
+  question            Question          @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  /** For MCQ / TRUE_FALSE. */
+  selectedOptionId String?
+  selectedOption   QuestionOption? @relation(fields: [selectedOptionId], references: [id], onDelete: SetNull)
+  /** For SHORT_ANSWER / ESSAY. */
+  responseText String?
+
+  marksAwarded Int?
+  autoGraded   Boolean @default(false)
+  feedback     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([examAttemptId, examPaperQuestionId])
 }
 
 // --- Finance -------------------------------------------------------------

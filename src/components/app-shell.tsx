@@ -40,6 +40,7 @@ const NAV_SECTIONS: NavItem[] = [
   { label: "Admissions", href: "/admissions", flag: "phase3.admissions", permission: "admissions.leads:view" },
   { label: "Finance", href: "/finance", flag: "phase4.finance", permission: "finance.invoices:view" },
   { label: "LMS", href: "/lms", flag: "phase5.lms", permission: "lms.assignments:view" },
+  { label: "Exams", href: "/exams", flag: "exams.examcell", permission: ["exams.exams:view", "exams.banks:view"] },
   { label: "Communication", href: "/connect", flag: "phase6.connect", permission: "connect.broadcasts:view" },
   { label: "HR", href: "/hr", flag: "phase7.hr", permission: "hr.org:view" },
   { label: "Operations", href: "/operations", flag: "phase8.operations", permission: OPS_LANDING_PERMISSION_KEYS },

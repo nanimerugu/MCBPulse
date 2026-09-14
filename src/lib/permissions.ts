@@ -225,6 +225,16 @@ export const PERMISSIONS: PermissionDef[] = [
   { module: "analytics.dashboard", action: "view", description: "View cross-module dashboards" },
   { module: "analytics.reports", action: "view", description: "Open the report catalogue" },
   { module: "analytics.reports", action: "export", description: "Download a report as CSV" },
+
+  // --- Examcell (the other half of the blueprint's Phase 5) ----------------
+  { module: "exams.banks", action: "view", description: "View question banks" },
+  { module: "exams.banks", action: "create", description: "Create a question bank and add questions" },
+  { module: "exams.banks", action: "edit", description: "Retire a question" },
+
+  { module: "exams.exams", action: "view", description: "View exams, papers and attempts" },
+  { module: "exams.exams", action: "create", description: "Schedule an exam and build its paper" },
+  { module: "exams.exams", action: "publish", description: "Publish an exam to a section" },
+  { module: "exams.exams", action: "edit", description: "Record and mark attempts" },
 ];
 
 export function permissionKey(module: string, action: Action): string {

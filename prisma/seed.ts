@@ -615,6 +615,61 @@ async function main() {
     }
   }
 
+  console.log("Seeding demo Examcell...");
+  const mathsSubjectId = subjectIds.get("MAT")!;
+  let fractionsBank = await db.questionBank.findFirst({ where: { subjectId: mathsSubjectId, name: "Fractions — Grade 5" } });
+  if (!fractionsBank) {
+    fractionsBank = await db.questionBank.create({ data: { subjectId: mathsSubjectId, name: "Fractions — Grade 5" } });
+
+    const mcq = async (text: string, options: [string, boolean][], difficulty: "EASY" | "MEDIUM" | "HARD", marks: number) => {
+      await db.question.create({
+        data: {
+          questionBankId: fractionsBank!.id,
+          type: "MCQ",
+          text,
+          marks,
+          difficulty,
+          options: { create: options.map(([t, isCorrect], i) => ({ text: t, isCorrect, sequence: i + 1 })) },
+        },
+      });
+    };
+    await mcq("Which fraction is equivalent to 1/2?", [["2/4", true], ["1/3", false], ["3/5", false], ["2/5", false]], "EASY", 1);
+    await mcq("What is 1/4 + 1/4?", [["1/2", true], ["2/8", false], ["1/8", false], ["3/4", false]], "EASY", 1);
+    await mcq("Which is largest?", [["3/4", true], ["2/3", false], ["1/2", false], ["5/8", false]], "EASY", 1);
+    await mcq("Simplify 6/8.", [["3/4", true], ["2/3", false], ["4/6", false], ["6/8", false]], "MEDIUM", 2);
+    await mcq("What is 2/3 of 9?", [["6", true], ["3", false], ["4", false], ["9", false]], "MEDIUM", 2);
+    await db.question.create({
+      data: {
+        questionBankId: fractionsBank.id,
+        type: "TRUE_FALSE",
+        text: "1/3 is greater than 1/2.",
+        marks: 1,
+        difficulty: "EASY",
+        options: { create: [{ text: "True", isCorrect: false, sequence: 1 }, { text: "False", isCorrect: true, sequence: 2 }] },
+      },
+    });
+    await db.question.create({
+      data: {
+        questionBankId: fractionsBank.id,
+        type: "SHORT_ANSWER",
+        text: "Explain, in your own words, what a denominator tells you.",
+        marks: 3,
+        difficulty: "MEDIUM",
+        correctAnswer: "How many equal parts the whole has been divided into.",
+      },
+    });
+    await db.question.create({
+      data: {
+        questionBankId: fractionsBank.id,
+        type: "ESSAY",
+        text: "A recipe needs 3/4 cup of flour. You are making half the recipe. Show how you work out how much flour you need.",
+        marks: 5,
+        difficulty: "HARD",
+        correctAnswer: "3/4 x 1/2 = 3/8 cup. Full marks for showing the multiplication and simplifying.",
+      },
+    });
+  }
+
   console.log("Seeding demo portal logins...");
   // A parent (Anil Rao, who has TWO children so the child switcher has
   // something to switch), a student (Meera Iyer) and a driver (Ravi Kumar,
@@ -706,6 +761,11 @@ async function main() {
   await db.featureFlag.upsert({
     where: { key: "phase9.portal" },
     create: { key: "phase9.portal", description: "Family portal: parent, student and driver views on their own records (Phase 9)", defaultEnabled: true },
+    update: { defaultEnabled: true },
+  });
+  await db.featureFlag.upsert({
+    where: { key: "exams.examcell" },
+    create: { key: "exams.examcell", description: "Examcell: question banks, paper generation, exams and attempts", defaultEnabled: true },
     update: { defaultEnabled: true },
   });
   await db.featureFlag.upsert({

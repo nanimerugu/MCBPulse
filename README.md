@@ -155,7 +155,17 @@ phase gets its own schema slice and its own pass, not one giant change.
     rate limiting, alerting, a load test, a screen-reader pass — is listed
     honestly in [`docs/operations-runbook.md`](docs/operations-runbook.md)
     alongside backup/restore, migration rollback and an incident checklist.
-14. **Examcell — still not built.** Examcell (question banks, papers, online
+14. **Examcell — working.** The other half of the blueprint's Phase 5:
+    question banks with MCQ / true-false / short-answer / essay questions,
+    **paper generation** from a blueprint of "n easy MCQs, n hard essays"
+    that refuses rather than approximating (a shortfall names exactly which
+    line the bank is short on; a paper that misses the exam total is
+    rejected), a seeded shuffle so a generated paper is reproducible from
+    its inputs, publishing that freezes the paper and creates an attempt row
+    per enrolled student, **auto-grading of objective questions only**, and
+    teacher marking for the rest. Gated by `exams.examcell` and 7 `exams.*`
+    permissions, section-scoped for teachers by the Phase 2 attribute
+    policy. Code in `src/modules/examcell/`. Examcell (question banks, papers, online
     exam attempts) and the rest of blueprint section 8 (Files, AI) exist in
     `prisma/schema.prisma` and migrate cleanly. **No route or business logic
     touches any of it yet.**
@@ -366,10 +376,10 @@ before this touches anything real.
   describes the teacher's day. Phase 9 gave students a login and a read-only
   view of their marks; uploading an answer needs the Files adapter, which is
   not built.
-- **Examcell is not built.** Question banks, paper generation, online exam
-  attempts and invigilation (blueprint 11.15) are the other half of the
-  blueprint's Phase 5 line. The tables exist; nothing reads them. Report
-  cards and holistic reporting depend on it.
+- **Report cards are not built.** Examcell now produces exam marks and the
+  LMS produces assignment marks, but nothing combines them into a term
+  report with a grading scale, remarks and a printable layout — that needs a
+  school-specific grading policy (11.14) rather than a guess.
 - **The gradebook shows percentages, not letter grades.** Deliberate: 11.14
   says to "support curriculum-specific grading engines rather than
   hard-coding one grading model", and CBSE, IB and Cambridge disagree about
