@@ -49,12 +49,21 @@ phase gets its own schema slice and its own pass, not one giant change.
    number is known. Gated by `phase3.admissions` and 11 `admissions.*`
    permissions. Code in `src/modules/admissions/` and
    `src/app/(app)/admissions/`, `src/app/apply/`.
-5. **Phase 4+ — schema only.** The rest of the canonical data model from
-   blueprint section 8 (Finance, Accounting, LMS, Assessment, HR, Operations,
-   Communication, Files, AI) exists in `prisma/schema.prisma` and migrates
-   cleanly. **No route or business logic touches any of it yet.** (Finance
-   permissions are already in the catalog and granted to roles ahead of
-   Phase 4; they gate nothing until it lands.)
+5. **Phase 4 (Finance) — working.** Fee heads and per-grade fee structures
+   (locked once invoices exist, so history can't be rewritten); concessions;
+   invoices raised per student or per section (idempotent, concessions
+   applied at raise time, lines copied not referenced); payments with
+   automatic receipts, partial payments, and an **optimistic lock** on the
+   invoice; refunds (requested → approved → processed); and a **double-entry
+   ledger** — every payment and processed refund posts a balanced journal
+   entry, with a trial balance that says so. Money is handled in integer
+   minor units end to end (`src/modules/finance/money.ts`), never floats.
+   Gated by `phase4.finance` and 12 `finance.*` permissions. Code in
+   `src/modules/finance/` and `src/app/(app)/finance/`.
+6. **Phase 5+ — schema only.** The rest of the canonical data model from
+   blueprint section 8 (LMS, Assessment, HR, Operations, Communication,
+   Files, AI) exists in `prisma/schema.prisma` and migrates cleanly. **No
+   route or business logic touches any of it yet.**
 
 ## Stack
 
@@ -103,10 +112,16 @@ that engine, both learned the hard way:
   Read the generated SQL before deploying it.
 - **It sheds connections under concurrency.** A page rendering several
   queries in parallel plus one extra script was enough to get
-  `Connection terminated unexpectedly` / `ECONNRESET`. The app's pool is
-  capped at 5 with keep-alive (`src/lib/db.ts`) to leave the engine headroom;
-  if you need to run a script against the DB while the dev server is up and
-  it gets reset, stop the dev server first. A real Postgres has none of this.
+  `Connection terminated unexpectedly` / `ECONNRESET`, and later a
+  `08P01: bind message supplies 4 parameters, but prepared statement ""
+  requires 0` — the proxy losing prepared-statement state mid-request. Both
+  are intermittent and clear on reload; neither has been seen against a real
+  Postgres. The app's pool is capped at 5 with keep-alive
+  (`src/lib/db.ts`) to leave the engine headroom; stop the dev server before
+  running a script against the same database. There is deliberately **no
+  blanket query retry** in `db.ts` — retrying a write whose outcome is
+  unknown risks double-charging someone, which is a worse failure than a
+  500 the user can refresh past.
 
 The seed script prints two demo logins (`platform-admin@mcbpulse.local` and
 `admin@nalanda-demo.local`, both `ChangeMe!123`) — change or delete them
@@ -138,7 +153,10 @@ before this touches anything real.
 | Admissions → SIS hand-off: accepted application → Student + Guardian + lead ADMITTED, one transaction, cross-module audit | [`src/modules/admissions/applications.service.ts`](src/modules/admissions/applications.service.ts) |
 | Public enquiry intake: honeypot, in-process per-IP rate limit, silent duplicate absorption | [`src/modules/admissions/public-intake.ts`](src/modules/admissions/public-intake.ts), [`src/app/apply/`](src/app/apply/) |
 | Generic server-action form (fields as children, one client component for many small forms) | [`src/components/action-form.tsx`](src/components/action-form.tsx) |
-| **Schema only:** canonical data model for the Phase 4+ domains (part of 72 tables / 29 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
+| Money in integer minor units; invoice/status/posting rules (pure, tested) | [`src/modules/finance/money.ts`](src/modules/finance/money.ts) |
+| Payments: optimistic lock, auto receipt, status recompute, balanced journal posting — one transaction | [`src/modules/finance/payments.service.ts`](src/modules/finance/payments.service.ts) |
+| Double-entry ledger and trial balance | [`src/modules/finance/ledger.service.ts`](src/modules/finance/ledger.service.ts) |
+| **Schema only:** canonical data model for the Phase 5+ domains (part of 72 tables / 29 enums) | [`prisma/schema.prisma`](prisma/schema.prisma) from the `PHASE 1+ CANONICAL DATA MODEL` banner down |
 
 ## Known limitations / follow-ups
 
@@ -162,9 +180,25 @@ before this touches anything real.
   it to Redis before running more than one server), and silent duplicate
   absorption. WhatsApp/campaign messaging and the chatbot are Phase 6 too.
 - **Admission doesn't collect a fee.** Blueprint 10.2 puts "fee payment"
-  between offer and enrollment; conversion currently creates the student
-  directly. Phase 4 Finance adds the invoice, and the hook is the
-  `Application.convertedStudentId` link.
+  between offer and enrollment; conversion creates the student directly and
+  an invoice is raised separately afterwards. Wiring conversion straight
+  into `raiseInvoice` is the obvious next step — the hook is
+  `Application.convertedStudentId`.
+- **No payment gateway, and `ONLINE` is a manual entry.** `recordPayment`
+  is provider-agnostic and already takes a reference; a real gateway needs
+  the adapter plus a webhook that calls the same function (blueprint 10.6's
+  "payment gateway webhook verifies transaction"). Daily reconciliation
+  against bank/gateway statements (`ReconciliationRecord` exists, unused)
+  and PDC handling are not built.
+- **Invoice numbers are allocated by counting.** `raiseInvoice` counts
+  existing invoices and retries on the unique-constraint violation. That is
+  correct under concurrency but not gapless; a Postgres sequence per
+  organization is the better answer if the numbering must satisfy an
+  auditor.
+- **The ledger is minimal by design.** Three accounts (Cash, Bank, Fee
+  income), postings only for payments and refunds. No expenses, payroll
+  journal, period close, or statement of accounts — those follow the modules
+  that generate them.
 - **Follow-ups are manual dates, not automated sequences.** "Automated
   follow-up schedule creates tasks/reminders" and lead scoring (blueprint
   11.12) belong to the shared workflow engine (section 12).

@@ -27,6 +27,12 @@ import { LifecycleForm } from "@/app/(app)/students/[id]/lifecycle-form";
 import { GuardianForm, type ExistingGuardianOption } from "@/app/(app)/students/[id]/guardian-form";
 import { EmergencyContactForm } from "@/app/(app)/students/[id]/emergency-contact-form";
 import { LeaveForm } from "@/app/(app)/students/[id]/leave-form";
+import { ActionForm } from "@/components/action-form";
+import { Field, Input, Select } from "@/components/ui";
+import { studentFeeSummary } from "@/modules/finance/invoices.service";
+import { listConcessions, listFeeStructures } from "@/modules/finance/fees.service";
+import { INVOICE_STATUS_LABELS, formatMoney, toMinor } from "@/modules/finance/money";
+import { grantConcessionAction, raiseInvoiceAction } from "@/app/(app)/finance/actions";
 
 export default async function StudentProfilePage({
   params,
@@ -63,7 +69,21 @@ export default async function StudentProfilePage({
     );
   }
 
-  const academicsOn = await isFeatureEnabled("phase2.academics", ctx.organizationId);
+  const [academicsOn, financeOn] = await Promise.all([
+    isFeatureEnabled("phase2.academics", ctx.organizationId),
+    isFeatureEnabled("phase4.finance", ctx.organizationId),
+  ]);
+  const feeYearId = student.currentSection?.academicYearId ?? ctx.academicYear?.id ?? null;
+  const [fees, concessions, feeStructures, canViewFees, canRaiseInvoice, canGrantConcession] = financeOn
+    ? await Promise.all([
+        studentFeeSummary(student.id, ctx.organizationId),
+        listConcessions(student.id, ctx.organizationId),
+        feeYearId ? listFeeStructures(student.branchId, feeYearId) : Promise.resolve([]),
+        authorize(viewer.userId, "finance.invoices", "view", scope),
+        authorize(viewer.userId, "finance.invoices", "create", scope),
+        authorize(viewer.userId, "finance.concessions", "approve", scope),
+      ])
+    : [null, [], [], false, false, false];
   const [canEdit, canEnroll, canGuardians, canUnlinkGuardian, canArchive, canApproveLeave, sections, attendance, leave] = await Promise.all([
     authorize(viewer.userId, "sis.students", "edit", scope),
     authorize(viewer.userId, "sis.enrollment", "edit", scope),
@@ -231,6 +251,90 @@ export default async function StudentProfilePage({
               </details>
             ) : null}
           </Card>
+
+          {financeOn && canViewFees && fees ? (
+            <Card title="Fees">
+              <DescriptionList
+                items={[
+                  { label: "Invoiced", value: formatMoney(fees.invoicedMinor) },
+                  { label: "Paid", value: formatMoney(fees.paidMinor) },
+                  { label: "Outstanding", value: <span className="font-semibold">{formatMoney(fees.outstandingMinor)}</span> },
+                  { label: "Concessions", value: concessions.length ? formatMoney(concessions.reduce((s, c) => s + toMinor(c.amount), 0)) : "—" },
+                ]}
+              />
+              {fees.invoices.length > 0 ? (
+                <ul className="mt-4 divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
+                  {fees.invoices.map((inv) => (
+                    <li key={inv.id} className="flex items-center justify-between py-1.5">
+                      <Link href={withBranch(`/finance/invoices/${inv.id}`, ctx)} className="font-mono text-xs text-zinc-900 hover:underline dark:text-zinc-50">
+                        {inv.invoiceNumber}
+                      </Link>
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                        {inv.feeStructure?.name ?? "ad hoc"} · due {formatDate(inv.dueDate)}
+                      </span>
+                      <span className="flex items-center gap-2 text-xs">
+                        <span className="font-mono">{formatMoney(inv.outstandingMinor)} due</span>
+                        <Badge tone={inv.displayStatus === "PAID" ? "green" : inv.displayStatus === "OVERDUE" ? "red" : inv.displayStatus === "PARTIAL" ? "amber" : "neutral"}>
+                          {INVOICE_STATUS_LABELS[inv.displayStatus]}
+                        </Badge>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">No invoices yet.</p>
+              )}
+              {canRaiseInvoice && feeStructures.length > 0 ? (
+                <details className="mt-4">
+                  <summary className="cursor-pointer text-sm font-medium text-zinc-700 dark:text-zinc-200">Raise an invoice</summary>
+                  <div className="mt-3">
+                    <ActionForm action={raiseInvoiceAction.bind(null, student.id)} hidden={{ branchId: ctx.branch.id }} submitLabel="Raise invoice" inline>
+                      <Field label="Fee structure" htmlFor="inv-structure">
+                        <Select id="inv-structure" name="feeStructureId" required defaultValue={feeStructures[0].id} className="w-72">
+                          {feeStructures.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} · {formatMoney(s.totalMinor)}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Field label="Due date" htmlFor="inv-due">
+                        <Input id="inv-due" name="dueDate" type="date" required className="w-44" />
+                      </Field>
+                    </ActionForm>
+                  </div>
+                </details>
+              ) : null}
+              {canGrantConcession ? (
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-sm font-medium text-zinc-700 dark:text-zinc-200">Grant a concession</summary>
+                  <div className="mt-3">
+                    <ActionForm action={grantConcessionAction.bind(null, student.id)} hidden={{ branchId: ctx.branch.id }} submitLabel="Grant" inline>
+                      <Input name="amount" placeholder="Amount" required className="w-32" aria-label="Concession amount" inputMode="decimal" />
+                      <Input name="reason" placeholder="Reason (e.g. sibling discount)" required className="w-64" aria-label="Reason" />
+                      <Select name="feeStructureId" defaultValue="" className="w-56" aria-label="Applies to">
+                        <option value="">Any structure</option>
+                        {feeStructures.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </ActionForm>
+                    {concessions.length > 0 ? (
+                      <ul className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                        {concessions.map((c) => (
+                          <li key={c.id}>
+                            {formatMoney(toMinor(c.amount))} · {c.reason} · {c.feeStructure?.name ?? "any structure"}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                </details>
+              ) : null}
+            </Card>
+          ) : null}
 
           {academicsOn ? (
             <Card title="Leave">

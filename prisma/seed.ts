@@ -338,6 +338,33 @@ async function main() {
     await db.appointment.create({ data: { applicationId: farahApp.id, type: "INTERVIEW", scheduledAt: new Date(`${now.getFullYear()}-09-18T10:30:00.000Z`) } });
   }
 
+  console.log("Seeding demo finance...");
+  const feeHeadIds = new Map<string, string>();
+  for (const name of ["Tuition fee", "Books & uniform", "Transport fee"]) {
+    const h = await db.feeHead.upsert({ where: { organizationId_name: { organizationId: org.id, name } }, create: { organizationId: org.id, name }, update: {} });
+    feeHeadIds.set(name, h.id);
+  }
+  // One annual structure per grade for the current year; tuition rises with the grade.
+  const gradesForFees = await db.grade.findMany({ where: { branchId: branch.id, deletedAt: null }, orderBy: { sequence: "asc" } });
+  for (const g of gradesForFees) {
+    const name = `${g.name} — Annual ${academicYear.name}`;
+    const structure =
+      (await db.feeStructure.findFirst({ where: { branchId: branch.id, academicYearId: academicYear.id, name, deletedAt: null } })) ??
+      (await db.feeStructure.create({ data: { branchId: branch.id, academicYearId: academicYear.id, gradeId: g.id, name } }));
+    const tuition = (25000 + 2000 * g.sequence).toFixed(2);
+    for (const [head, amount] of [["Tuition fee", tuition], ["Books & uniform", "3500.00"]] as const) {
+      await db.feeStructureLine.upsert({
+        where: { feeStructureId_feeHeadId: { feeStructureId: structure.id, feeHeadId: feeHeadIds.get(head)! } },
+        create: { feeStructureId: structure.id, feeHeadId: feeHeadIds.get(head)!, amount },
+        update: {},
+      });
+    }
+  }
+  // Chart of accounts (mirrors ACCOUNT_CODES in src/modules/finance/money.ts).
+  for (const [code, accName, type] of [["1000", "Cash", "ASSET"], ["1010", "Bank", "ASSET"], ["4000", "Fee income", "INCOME"]] as const) {
+    await db.account.upsert({ where: { organizationId_code: { organizationId: org.id, code } }, create: { organizationId: org.id, code, name: accName, type }, update: {} });
+  }
+
   console.log("Seeding feature flags...");
   // Phase 1 shipped, so SIS defaults on. An organization can still switch it
   // off with a FeatureFlagOverride — that's what the flag is for.
@@ -354,6 +381,11 @@ async function main() {
   await db.featureFlag.upsert({
     where: { key: "phase3.admissions" },
     create: { key: "phase3.admissions", description: "Admissions CRM: leads, applications, public enquiry form (Phase 3)", defaultEnabled: true },
+    update: { defaultEnabled: true },
+  });
+  await db.featureFlag.upsert({
+    where: { key: "phase4.finance" },
+    create: { key: "phase4.finance", description: "Finance: fee structures, invoices, payments & receipts, refunds, ledger (Phase 4)", defaultEnabled: true },
     update: { defaultEnabled: true },
   });
   await db.featureFlag.upsert({
