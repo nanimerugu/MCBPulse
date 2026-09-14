@@ -190,6 +190,9 @@ export const PERMISSIONS: PermissionDef[] = [
   { module: "hr.payroll", action: "create", description: "Open a payroll run and generate payslips" },
   { module: "hr.payroll", action: "approve", description: "Process a payroll run and mark it paid" },
   { module: "hr.payroll", action: "export", description: "Export a payroll run as CSV" },
+  // Defining what is withheld from everyone's pay is a separate power from
+  // running payroll: it changes every future payslip at once.
+  { module: "hr.payroll", action: "configure", description: "Define payroll deduction rules (rates are the school's to enter)" },
 
   { module: "hr.appraisals", action: "view", description: "View staff appraisals" },
   { module: "hr.appraisals", action: "edit", description: "Record a staff appraisal" },

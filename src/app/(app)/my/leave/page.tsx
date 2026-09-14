@@ -77,14 +77,38 @@ export default async function MyLeavePage() {
         ) : (
           <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
             {payslips.map((p) => (
-              <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                <span className="font-medium text-zinc-900 dark:text-zinc-50">{periodLabel(p.payrollRun.periodMonth, p.payrollRun.periodYear)}</span>
-                <span className="tabular-nums text-zinc-500 dark:text-zinc-400">
-                  {formatMoney(toMinor(p.grossPay))} − {formatMoney(toMinor(p.deductions))} = <strong>{formatMoney(toMinor(p.netPay))}</strong>
-                  <span className="ml-2">
-                    <Badge tone={p.payrollRun.status === "PAID" ? "green" : "neutral"}>{p.payrollRun.status.toLowerCase()}</Badge>
+              <li key={p.id} className="py-2 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium text-zinc-900 dark:text-zinc-50">{periodLabel(p.payrollRun.periodMonth, p.payrollRun.periodYear)}</span>
+                  <span className="tabular-nums text-zinc-500 dark:text-zinc-400">
+                    {formatMoney(toMinor(p.grossPay))} − {formatMoney(toMinor(p.deductions))} = <strong>{formatMoney(toMinor(p.netPay))}</strong>
+                    <span className="ml-2">
+                      <Badge tone={p.payrollRun.status === "PAID" ? "green" : "neutral"}>{p.payrollRun.status.toLowerCase()}</Badge>
+                    </span>
                   </span>
-                </span>
+                </div>
+                {p.lines.length > 0 ? (
+                  <details className="mt-1">
+                    <summary className="cursor-pointer text-xs text-zinc-500 dark:text-zinc-400">
+                      How this was worked out{p.payableDays !== null && p.daysInPeriod !== null ? ` · ${p.payableDays} of ${p.daysInPeriod} days paid` : ""}
+                    </summary>
+                    <ul className="mt-1 flex flex-col gap-0.5 text-xs text-zinc-600 dark:text-zinc-300">
+                      {p.lines.map((l) => (
+                        <li key={l.id} className="flex justify-between gap-3">
+                          <span>
+                            {l.label}
+                            {l.detail ? <span className="text-zinc-400 dark:text-zinc-500"> · {l.detail}</span> : null}
+                          </span>
+                          <span className="tabular-nums">
+                            {(l.kind === "DEDUCTION" || l.kind === "LOSS_OF_PAY") && toMinor(l.amount) > 0 ? "−" : ""}
+                            {formatMoney(toMinor(l.amount))}
+                            {l.kind === "EMPLOYER_CONTRIBUTION" ? " (paid by the school)" : ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
               </li>
             ))}
           </ul>

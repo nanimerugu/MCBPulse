@@ -535,6 +535,37 @@ before this touches anything real.
     Code in `src/modules/sis/promotion.ts` (pure),
     `src/modules/sis/year-end.service.ts`.
 
+27. **Payroll deductions and loss of pay — working.** Payroll used to take
+    one flat percentage per run. Now:
+    - **Deduction rules are the school's data** (`/hr/payroll/rules`, new
+      `hr.payroll:configure`). A rule is one of:
+      - a percentage of basic or of gross, with an optional wage ceiling on
+        the base and an optional "only if monthly gross is at most" limit;
+      - a fixed monthly amount;
+      - a per-person declared amount, for tax the accountant works out.
+
+      Employee and employer shares are kept apart. MCBPulse ships no rates.
+      Rules are switched off, never edited, so an old payslip still explains
+      itself.
+    - **Basic pay** can be recorded beside gross pay. A basic-based rule
+      meeting someone without it is skipped with that reason, never guessed
+      from gross.
+    - **Loss of pay.** HR can mark leave *unpaid*; once approved, those days
+      — together with joining or leaving mid-month — reduce gross pay by
+      calendar days. Overlapping requests are counted once, and eligibility
+      limits are judged on the full monthly gross.
+    - **Every payslip shows its working**, as snapshotted lines. That
+      includes a zero line, with the reason, for any rule that didn't apply.
+      Net pay never goes below zero, and a reduced deduction says so. The run
+      page, the staff member's own payslips and the CSV export (one column
+      per deduction code) all show it.
+    - **Paying a run posts the whole picture**: gross to salaries, net from
+      the bank, withheld deductions and employer contributions to "Payroll
+      deductions payable", in one balanced entry.
+
+    Code in `src/modules/hr/deductions.ts` (pure),
+    `deduction-rules.service.ts`, `payroll.service.ts`.
+
 ## Known limitations / follow-ups
 
 - **Phase 9 is a responsive web portal, not native apps.** There is no React
@@ -582,20 +613,15 @@ before this touches anything real.
 - **Transport has no attendance.** Nothing records who actually boarded the
   bus this morning; GPS, route tracking and a driver app are Phase 9's
   "driver experience".
-- **Payroll is arithmetic, not a statutory engine — do not file with it.**
-  A run carries one deduction percentage plus an optional fixed amount, both
-  typed in by whoever opens the run and recorded on it. MCBPulse does **not**
-  compute PF slabs, ESI eligibility, state-varying professional tax, or TDS
-  against an employee's declarations, and produces no statutory return.
-  Blueprint §18 requires legal review before real use. The deliberate choice
-  (`src/modules/hr/payroll.ts`) is that no numbers beat guessed numbers that
-  look official. Paying a run credits **bank** for net pay only; deductions
-  are not posted to a statutory liability account, because doing so would
-  assert a treatment this system isn't qualified to make.
-- **Payroll does not prorate.** Approved staff leave inside a period is shown
-  on the run as context (an "N days" column) and changes nothing. Loss-of-pay
-  rules, leave balances and leave types are a policy layer that isn't built;
-  a school needing them must adjust the pay figure by hand before generating.
+- **Payroll applies the school's rules; it still has no statutory tables —
+  do not file with it.** There are no built-in PF, ESI, professional-tax or
+  income-tax rates. Tax withheld is a per-person amount the accountant
+  declares, and no statutory return or challan is produced. Blueprint §18
+  requires legal review of the rates a school enters.
+- **Proration is calendar days only.** Joining, leaving and approved
+  *unpaid* leave reduce pay in proportion to calendar days; there is no
+  "30-day month" or working-days basis, no leave balances or leave types, and
+  no arrears for a change that lands after a run was processed.
 - **Exiting a staff member disables their login but doesn't reassign their
   work.** Subject assignments, timetable slots and authored assignments stay
   pointed at them; nothing prompts a handover.

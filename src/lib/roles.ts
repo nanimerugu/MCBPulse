@@ -190,6 +190,7 @@ const HR_ALL = [
   "hr.payroll:create",
   "hr.payroll:approve",
   "hr.payroll:export",
+  "hr.payroll:configure",
   "hr.appraisals:view",
   "hr.appraisals:edit",
   "hr.exit:edit",

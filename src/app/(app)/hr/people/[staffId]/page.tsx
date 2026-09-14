@@ -9,11 +9,12 @@ import { loadHrAccess, param } from "@/modules/sis/access";
 import { getStaffForHr } from "@/modules/hr/compensation.service";
 import { listDepartments, listPositions } from "@/modules/hr/org.service";
 import { listStaffLeave } from "@/modules/hr/staff-leave.service";
+import { listDeclaredForStaff, listDeductionRules } from "@/modules/hr/deduction-rules.service";
 import { formatMoney, toMinor } from "@/modules/finance/money";
 import { LEAVE_STATUS_LABELS, LEAVE_STATUS_TONES, leaveDayCount } from "@/modules/hr/leave";
 import { periodLabel } from "@/modules/hr/payroll";
 import { formatDate } from "@/modules/sis/labels";
-import { assignOrgUnitAction, recordAppraisalAction, recordExitAction, setPayAction } from "@/app/(app)/hr/actions";
+import { assignOrgUnitAction, recordAppraisalAction, recordExitAction, setBasicPayAction, setDeclaredDeductionAction, setPayAction } from "@/app/(app)/hr/actions";
 
 export default async function HrStaffPage({
   params,
@@ -37,16 +38,20 @@ export default async function HrStaffPage({
   const [staff, held] = await Promise.all([getStaffForHr(staffId, ctx.organizationId), heldPermissionKeys(viewer.userId, ctx.organizationId)]);
   if (!staff) notFound();
 
-  const [departments, positions, leave, years] = await Promise.all([
+  const canSeePay = held.has("hr.compensation:view");
+  const [departments, positions, leave, years, declaredRules, declared] = await Promise.all([
     listDepartments(ctx.organizationId),
     listPositions(ctx.organizationId),
     held.has("hr.leave:view") ? listStaffLeave(ctx.organizationId, ctx.branch.id, { staffId }) : Promise.resolve([]),
     db.academicYear.findMany({ where: { branchId: ctx.branch.id }, orderBy: { startDate: "desc" } }),
+    canSeePay ? listDeductionRules(ctx.organizationId, { activeOnly: true }).then((rs) => rs.filter((r) => r.basis === "DECLARED")) : Promise.resolve([]),
+    canSeePay ? listDeclaredForStaff(staffId, ctx.organizationId) : Promise.resolve([]),
   ]);
 
-  const canSeePay = held.has("hr.compensation:view");
   const hidden = { branchId: ctx.branch.id };
   const payMinor = staff.monthlyGrossPay === null ? null : toMinor(staff.monthlyGrossPay);
+  const basicMinor = staff.monthlyBasicPay === null ? null : toMinor(staff.monthlyBasicPay);
+  const declaredByRule = new Map(declared.map((d) => [d.ruleId, d]));
 
   return (
     <div className="flex max-w-4xl flex-col gap-6">
@@ -71,7 +76,12 @@ export default async function HrStaffPage({
             { label: "Department", value: staff.department?.name ?? "—" },
             { label: "Position", value: staff.position?.title ?? "—" },
             { label: "Joined", value: formatDate(staff.joinDate) },
-            ...(canSeePay ? [{ label: "Monthly gross", value: payMinor === null ? "Not set" : formatMoney(payMinor) }] : []),
+            ...(canSeePay
+              ? [
+                  { label: "Monthly gross", value: payMinor === null ? "Not set" : formatMoney(payMinor) },
+                  { label: "Monthly basic", value: basicMinor === null ? "Not set" : formatMoney(basicMinor) },
+                ]
+              : []),
           ]}
         />
       </Card>
@@ -120,6 +130,45 @@ export default async function HrStaffPage({
               />
             </Field>
           </ActionForm>
+          <div className="mt-4 border-t border-zinc-200 pt-4 dark:border-zinc-800">
+            <ActionForm action={setBasicPayAction.bind(null, staffId)} hidden={hidden} submitLabel="Save basic" inline>
+              <Field label="Basic pay (monthly)" htmlFor="basic" hint="Used by deduction rules defined on basic pay. Leave empty if none apply.">
+                <Input id="basic" name="monthlyBasicPay" inputMode="decimal" defaultValue={basicMinor === null ? "" : (basicMinor / 100).toFixed(2)} placeholder="25000.00" />
+              </Field>
+            </ActionForm>
+          </div>
+        </Card>
+      ) : null}
+
+      {held.has("hr.compensation:edit") && declaredRules.length > 0 ? (
+        <Card title="Declared deductions">
+          <p className="mb-3 text-sm text-zinc-500 dark:text-zinc-400">
+            Amounts your accountant works out per person — typically tax withheld. MCBPulse applies what is entered here and computes none of it.
+          </p>
+          <ul className="flex flex-col gap-3">
+            {declaredRules.map((r) => {
+              const current = declaredByRule.get(r.id);
+              return (
+                <li key={r.id}>
+                  <ActionForm action={setDeclaredDeductionAction.bind(null, { staffId, ruleId: r.id })} hidden={hidden} submitLabel="Save" inline>
+                    <Field label={`${r.code} · ${r.name} per month`} htmlFor={`decl-${r.id}`}>
+                      <Input
+                        id={`decl-${r.id}`}
+                        name="monthlyAmount"
+                        inputMode="decimal"
+                        defaultValue={current ? (toMinor(current.monthlyAmount) / 100).toFixed(2) : ""}
+                        placeholder="not declared"
+                        className="!w-36"
+                      />
+                    </Field>
+                    <Field label="Note" htmlFor={`decl-note-${r.id}`}>
+                      <Input id={`decl-note-${r.id}`} name="note" maxLength={200} defaultValue={current?.note ?? ""} placeholder="e.g. per FY declaration" className="!w-56" />
+                    </Field>
+                  </ActionForm>
+                </li>
+              );
+            })}
+          </ul>
         </Card>
       ) : null}
 

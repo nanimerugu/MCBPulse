@@ -74,7 +74,7 @@ export async function listOwnLeave(self: StaffSelf) {
 export async function listOwnPayslips(self: StaffSelf) {
   return db.payslip.findMany({
     where: { staffId: self.staffId, payrollRun: { status: { in: ["PROCESSED", "PAID"] } } },
-    include: { payrollRun: true },
+    include: { payrollRun: true, lines: { orderBy: { sequence: "asc" } } },
     orderBy: [{ payrollRun: { periodYear: "desc" } }, { payrollRun: { periodMonth: "desc" } }],
     take: 24,
   });

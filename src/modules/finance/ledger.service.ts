@@ -10,11 +10,13 @@ import { ACCOUNT_CODES, fromMinor, toMinor } from "@/modules/finance/money";
  * The chart of accounts is minimal and seeded on first use per organization.
  */
 
-const DEFAULT_ACCOUNTS: { code: string; name: string; type: "ASSET" | "INCOME" | "EXPENSE" }[] = [
+const DEFAULT_ACCOUNTS: { code: string; name: string; type: "ASSET" | "LIABILITY" | "INCOME" | "EXPENSE" }[] = [
   { code: ACCOUNT_CODES.CASH, name: "Cash", type: "ASSET" },
   { code: ACCOUNT_CODES.BANK, name: "Bank", type: "ASSET" },
+  { code: ACCOUNT_CODES.PAYROLL_DEDUCTIONS_PAYABLE, name: "Payroll deductions payable", type: "LIABILITY" },
   { code: ACCOUNT_CODES.FEE_INCOME, name: "Fee income", type: "INCOME" },
   { code: ACCOUNT_CODES.SALARY_EXPENSE, name: "Salaries and wages", type: "EXPENSE" },
+  { code: ACCOUNT_CODES.EMPLOYER_CONTRIBUTIONS_EXPENSE, name: "Employer payroll contributions", type: "EXPENSE" },
 ];
 
 type Tx = Prisma.TransactionClient;

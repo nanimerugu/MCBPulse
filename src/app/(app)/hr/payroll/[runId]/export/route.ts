@@ -23,16 +23,39 @@ export async function GET(request: Request, { params }: { params: Promise<{ runI
   const run = await getPayrollRun(runId, { organizationId: ctx.organizationId, branchId: ctx.branch.id });
   if (!run) return new Response("Not found", { status: 404 });
 
-  const header = ["employee_code", "name", "email", "department", "position", "gross", "deductions", "net"];
+  // One column per deduction code that actually took money on this run, so
+  // an accountant remitting provident fund can total a column rather than
+  // reading working notes.
+  const codes = [...new Set(run.payslips.flatMap((p) => p.lines.filter((l) => l.kind === "DEDUCTION" && toMinor(l.amount) > 0).map((l) => l.code)))].sort();
+  const header = [
+    "employee_code",
+    "name",
+    "email",
+    "department",
+    "position",
+    "days_in_period",
+    "payable_days",
+    "loss_of_pay_days",
+    "gross",
+    ...codes.map((c) => `deduction_${c.toLowerCase()}`),
+    "deductions",
+    "net",
+    "employer_contributions",
+  ];
   const rows = run.payslips.map((p) => [
     p.staff.employeeCode,
     p.staff.user.name,
     p.staff.user.email,
     p.staff.department?.name ?? "",
     p.staff.position?.title ?? p.staff.designation,
+    p.daysInPeriod === null ? "" : String(p.daysInPeriod),
+    p.payableDays === null ? "" : String(p.payableDays),
+    p.lossOfPayDays === null ? "" : String(p.lossOfPayDays),
     fromMinor(toMinor(p.grossPay)),
+    ...codes.map((c) => fromMinor(p.lines.filter((l) => l.kind === "DEDUCTION" && l.code === c).reduce((s, l) => s + toMinor(l.amount), 0))),
     fromMinor(toMinor(p.deductions)),
     fromMinor(toMinor(p.netPay)),
+    fromMinor(toMinor(p.employerContributions)),
   ]);
   const netMinor = run.payslips.reduce((s, p) => s + toMinor(p.netPay), 0);
 

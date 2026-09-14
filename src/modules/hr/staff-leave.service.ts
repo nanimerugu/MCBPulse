@@ -25,7 +25,7 @@ export async function listStaffLeave(organizationId: string, branchId: string, o
 
 export async function requestStaffLeave(
   staffId: string,
-  input: { fromDate: string; toDate: string; reason: string },
+  input: { fromDate: string; toDate: string; reason: string; unpaid?: boolean },
   actor: Actor,
 ) {
   const staff = await db.staff.findFirst({
@@ -52,14 +52,16 @@ export async function requestStaffLeave(
     throw new SisError(`This overlaps an existing ${clash.status.toLowerCase()} request (${from} to ${to})`);
   }
 
-  const leave = await db.leaveRequest.create({ data: { staffId, ...range, reason: input.reason } });
+  // Loss of pay is a decision someone makes, so it is only ever set from the
+  // HR form; staff filing their own leave can't mark it unpaid (or paid).
+  const leave = await db.leaveRequest.create({ data: { staffId, ...range, reason: input.reason, unpaid: input.unpaid === true } });
   await recordAuditEvent({
     organizationId: actor.organizationId,
     actorUserId: actor.userId,
     action: "staff_leave.requested",
     resourceType: "staff",
     resourceId: staffId,
-    after: { leaveId: leave.id, from: input.fromDate, to: input.toDate, reason: input.reason },
+    after: { leaveId: leave.id, from: input.fromDate, to: input.toDate, reason: input.reason, unpaid: input.unpaid === true },
   });
   return leave;
 }

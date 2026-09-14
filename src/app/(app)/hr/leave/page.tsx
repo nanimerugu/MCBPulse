@@ -73,6 +73,9 @@ export default async function StaffLeavePage({
             <Field label="Reason" htmlFor="lv-reason" hint="Overlapping a pending or approved request is refused.">
               <Input id="lv-reason" name="reason" required maxLength={500} placeholder="Medical leave" />
             </Field>
+            <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+              <input type="checkbox" name="unpaid" /> Unpaid leave — deduct these days from pay once approved
+            </label>
           </ActionForm>
         </Card>
       ) : null}
@@ -90,6 +93,12 @@ export default async function StaffLeavePage({
                   </Link>
                   <p className="text-zinc-500 dark:text-zinc-400">
                     {formatDate(l.fromDate)} – {formatDate(l.toDate)} · {leaveDayCount(l)} day{leaveDayCount(l) === 1 ? "" : "s"} · {l.reason}
+                    {l.unpaid ? (
+                      <>
+                        {" "}
+                        <Badge tone="amber">unpaid</Badge>
+                      </>
+                    ) : null}
                   </p>
                 </div>
                 {held.has("hr.leave:approve") ? (
@@ -118,6 +127,7 @@ export default async function StaffLeavePage({
                   <span className="text-zinc-500 dark:text-zinc-400">
                     {" "}
                     · {formatDate(l.fromDate)} – {formatDate(l.toDate)} · {l.reason}
+                    {l.unpaid ? " · unpaid" : ""}
                   </span>
                 </span>
                 <Badge tone={LEAVE_STATUS_TONES[l.status]}>{LEAVE_STATUS_LABELS[l.status].toLowerCase()}</Badge>

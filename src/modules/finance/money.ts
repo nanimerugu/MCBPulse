@@ -93,8 +93,16 @@ export const ACCOUNT_CODES = {
   CASH: "1000",
   BANK: "1010",
   FEE_INCOME: "4000",
-  /** Phase 7: a paid payroll run debits salary expense and credits the bank. */
+  /** Phase 7: a paid payroll run debits salary expense (gross) and credits the bank (net). */
   SALARY_EXPENSE: "5000",
+  /**
+   * Money withheld from pay (and employer contributions) that the school now
+   * owes to someone else — a fund, an insurer, the tax department. Credited
+   * when a run is paid; cleared when the school remits it, outside MCBPulse.
+   */
+  PAYROLL_DEDUCTIONS_PAYABLE: "2100",
+  /** The employer's own share of contributions: a cost on top of salaries. */
+  EMPLOYER_CONTRIBUTIONS_EXPENSE: "5010",
 } as const;
 
 export function paymentPosting(method: PaymentMethod): { debit: string; credit: string } {

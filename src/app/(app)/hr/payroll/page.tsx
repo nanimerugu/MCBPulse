@@ -39,7 +39,12 @@ export default async function PayrollPage({
       <PageHeader
         title="Payroll"
         description={`${ctx.branch.name} · one run per month, per branch`}
-        actions={<LinkButton href={withBranch("/hr", ctx)}>Back to HR</LinkButton>}
+        actions={
+          <>
+            <LinkButton href={withBranch("/hr/payroll/rules", ctx)}>Deduction rules</LinkButton>
+            <LinkButton href={withBranch("/hr", ctx)}>Back to HR</LinkButton>
+          </>
+        }
       />
 
       {canOpen ? (

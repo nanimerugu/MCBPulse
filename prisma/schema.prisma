@@ -89,6 +89,7 @@ model Organization {
   automationRules       AutomationRule[]
   aiGenerations         AiGeneration[]
   jobRuns               JobRun[]
+  payrollDeductionRules PayrollDeductionRule[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -641,6 +642,10 @@ model Staff {
   // someone whose pay hasn't been set, who is then skipped by payroll
   // rather than silently paid zero.
   monthlyGrossPay Decimal? @db.Decimal(12, 2)
+  // The basic-pay component, for deduction rules a school defines on basic
+  // (provident fund, typically). Optional; a basic-based rule meeting a
+  // person without one is skipped with that reason, never guessed from gross.
+  monthlyBasicPay Decimal? @db.Decimal(12, 2)
 
   subjectAssignments  SubjectAssignment[]
   timetableSlots      TimetableSlot[]
@@ -655,6 +660,7 @@ model Staff {
   periodRegisters     PeriodRegister[]    @relation("PeriodRegisterTaker")
   substitutionsAbsent Substitution[]      @relation("SubstitutionAbsent")
   substitutionsCover  Substitution[]      @relation("SubstitutionCover")
+  declaredDeductions  StaffDeclaredDeduction[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -940,6 +946,11 @@ model LeaveRequest {
   fromDate         DateTime
   toDate           DateTime
   reason           String
+  /**
+   * Staff leave only: loss of pay. Set explicitly by HR — leave is PAID
+   * unless someone decided otherwise, so no one is docked by default.
+   */
+  unpaid           Boolean            @default(false)
   status           LeaveRequestStatus @default(PENDING)
   approvedByUserId String?
 
@@ -1775,6 +1786,97 @@ model PayrollRun {
   @@unique([branchId, periodYear, periodMonth])
 }
 
+enum DeductionBasis {
+  PERCENT_OF_BASIC
+  PERCENT_OF_GROSS
+  FIXED
+  DECLARED
+}
+
+/**
+ * A payroll deduction the SCHOOL defines — provident fund, state insurance,
+ * professional tax, tax withheld, a loan recovery.
+ *
+ * MCBPulse ships no rates and seeds no rules. Every number here was typed by
+ * someone at the school who knows their obligations; the system only
+ * applies them consistently and shows its working on every payslip. Legal
+ * review of the rates is the school's, as blueprint section 18 insists.
+ */
+model PayrollDeductionRule {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name  String
+  /** Short label for payslips and CSV columns, e.g. "PF". Unique per organization. */
+  code  String
+  basis DeductionBasis
+
+  /** PERCENT_* rules: the employee's share, deducted from pay. */
+  employeePercent Decimal? @db.Decimal(5, 2)
+  /** PERCENT_* rules: the employer's share — an extra cost, not a deduction. */
+  employerPercent Decimal? @db.Decimal(5, 2)
+  /** FIXED rules: the amount per month. */
+  fixedAmount     Decimal? @db.Decimal(12, 2)
+  /** PERCENT_* rules: the base is capped at this monthly amount. */
+  wageCeiling     Decimal? @db.Decimal(12, 2)
+  /** The rule applies only to someone whose monthly gross is at most this. */
+  grossEligibilityMax Decimal? @db.Decimal(12, 2)
+
+  active Boolean @default(true)
+
+  declared StaffDeclaredDeduction[]
+
+  createdByUserId String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([organizationId, code])
+}
+
+/**
+ * A per-person monthly amount for a DECLARED rule — typically tax withheld,
+ * which depends on each employee's declarations and is computed by the
+ * school's accountant, not by this system.
+ */
+model StaffDeclaredDeduction {
+  id            String               @id @default(uuid())
+  staffId       String
+  staff         Staff                @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  ruleId        String
+  rule          PayrollDeductionRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  monthlyAmount Decimal              @db.Decimal(12, 2)
+  note          String?
+
+  updatedByUserId String
+  updatedAt       DateTime @updatedAt
+
+  @@unique([staffId, ruleId])
+}
+
+enum PayslipLineKind {
+  EARNING
+  LOSS_OF_PAY
+  DEDUCTION
+  EMPLOYER_CONTRIBUTION
+}
+
+/** One line of a payslip's working, snapshotted with it. */
+model PayslipLine {
+  id        String          @id @default(uuid())
+  payslipId String
+  payslip   Payslip         @relation(fields: [payslipId], references: [id], onDelete: Cascade)
+  kind      PayslipLineKind
+  code      String
+  label     String
+  amount    Decimal         @db.Decimal(12, 2)
+  /** How it was worked out: "12% of ₹15,000 (capped)". */
+  detail    String?
+  sequence  Int
+
+  @@unique([payslipId, sequence])
+}
+
 model Payslip {
   id           String     @id @default(uuid())
   payrollRunId String
@@ -1785,6 +1887,16 @@ model Payslip {
   grossPay   Decimal @db.Decimal(12, 2)
   deductions Decimal @db.Decimal(12, 2)
   netPay     Decimal @db.Decimal(12, 2)
+
+  // How the month was paid, COPIED at generation so a payslip explains
+  // itself after rules, pay or leave records change.
+  daysInPeriod          Int?
+  payableDays           Int?
+  lossOfPayDays         Int?
+  /** Employer-side contributions — shown and posted, never taken from net pay. */
+  employerContributions Decimal @default(0) @db.Decimal(12, 2)
+
+  lines PayslipLine[]
 
   generatedAt DateTime @default(now())
 

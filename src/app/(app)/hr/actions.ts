@@ -14,6 +14,7 @@ import { assignStaffToOrgUnit, createDepartment, createPosition } from "@/module
 import { recordAppraisal, recordStaffExit, setMonthlyGrossPay } from "@/modules/hr/compensation.service";
 import { decideStaffLeave, requestStaffLeave } from "@/modules/hr/staff-leave.service";
 import { generatePayslips, openPayrollRun, payPayrollRun, processPayrollRun, type PayrollScope } from "@/modules/hr/payroll.service";
+import { createDeductionRule, setDeclaredDeduction, setDeductionRuleActive, setMonthlyBasicPay } from "@/modules/hr/deduction-rules.service";
 
 function toFormState(error: unknown): FormState {
   if (error instanceof SisError || error instanceof ForbiddenError) return { error: error.message };
@@ -99,6 +100,94 @@ export async function setPayAction(staffId: string, _prev: FormState, formData: 
   return { success: "Monthly pay saved" };
 }
 
+export async function setBasicPayAction(staffId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  try {
+    const access = await requireHrAccessForAction(str(formData, "branchId"), "hr.compensation", "edit");
+    const raw = str(formData, "monthlyBasicPay")?.trim() ?? "";
+    const minor = raw === "" ? null : parseMoneyInput(raw);
+    if (raw !== "" && minor === null) return { fieldErrors: { monthlyBasicPay: "Enter an amount like 25000, or leave it empty" } };
+    await setMonthlyBasicPay(staffId, minor, actorOf(access));
+  } catch (e) {
+    return toFormState(e);
+  }
+  revalidatePath(`/hr/people/${staffId}`);
+  return { success: "Basic pay saved" };
+}
+
+export async function setDeclaredDeductionAction(target: { staffId: string; ruleId: string }, _prev: FormState, formData: FormData): Promise<FormState> {
+  try {
+    const access = await requireHrAccessForAction(str(formData, "branchId"), "hr.compensation", "edit");
+    const ids = z.object({ staffId: z.uuid(), ruleId: z.uuid() }).safeParse(target);
+    if (!ids.success) return { error: "That person or rule couldn't be found" };
+    const raw = str(formData, "monthlyAmount")?.trim() ?? "";
+    const minor = raw === "" ? null : parseMoneyInput(raw);
+    if (raw !== "" && minor === null) return { fieldErrors: { monthlyAmount: "Enter an amount, or leave it empty to clear" } };
+    await setDeclaredDeduction({ ...ids.data, monthlyMinor: minor, note: str(formData, "note")?.trim() || undefined }, actorOf(access));
+    revalidatePath(`/hr/people/${ids.data.staffId}`);
+  } catch (e) {
+    return toFormState(e);
+  }
+  return { success: "Saved — it applies from the next payslips generated" };
+}
+
+export async function createDeductionRuleAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  try {
+    const access = await requireHrAccessForAction(str(formData, "branchId"), "hr.payroll", "configure");
+    const basis = z.enum(["PERCENT_OF_BASIC", "PERCENT_OF_GROSS", "FIXED", "DECLARED"]).safeParse(str(formData, "basis"));
+    if (!basis.success) return { fieldErrors: { basis: "Choose a basis" } };
+
+    const percent = (key: string): number | null | "bad" => {
+      const raw = str(formData, key)?.trim() ?? "";
+      if (raw === "") return null;
+      const n = Number(raw);
+      return Number.isFinite(n) ? n : "bad";
+    };
+    const amount = (key: string): number | null | "bad" => {
+      const raw = str(formData, key)?.trim() ?? "";
+      if (raw === "") return null;
+      return parseMoneyInput(raw) ?? "bad";
+    };
+    const employeePercent = percent("employeePercent");
+    const employerPercent = percent("employerPercent");
+    const fixedMinor = amount("fixedAmount");
+    const wageCeilingMinor = amount("wageCeiling");
+    const grossEligibilityMaxMinor = amount("grossEligibilityMax");
+    for (const [key, v] of Object.entries({ employeePercent, employerPercent, fixedAmount: fixedMinor, wageCeiling: wageCeilingMinor, grossEligibilityMax: grossEligibilityMaxMinor })) {
+      if (v === "bad") return { fieldErrors: { [key]: "That isn't a number" } };
+    }
+
+    await createDeductionRule(
+      {
+        code: str(formData, "code") ?? "",
+        name: str(formData, "name") ?? "",
+        basis: basis.data,
+        employeePercent: employeePercent as number | null,
+        employerPercent: employerPercent as number | null,
+        fixedMinor: fixedMinor as number | null,
+        wageCeilingMinor: wageCeilingMinor as number | null,
+        grossEligibilityMaxMinor: grossEligibilityMaxMinor as number | null,
+      },
+      actorOf(access),
+    );
+  } catch (e) {
+    return toFormState(e);
+  }
+  revalidatePath("/hr/payroll/rules");
+  return { success: "Rule added — it applies to payslips generated from now on" };
+}
+
+export async function setDeductionRuleActiveAction(ruleId: string, active: boolean, _prev: FormState, formData: FormData): Promise<FormState> {
+  try {
+    const access = await requireHrAccessForAction(str(formData, "branchId"), "hr.payroll", "configure");
+    if (!z.uuid().safeParse(ruleId).success) return { error: "Rule not found" };
+    await setDeductionRuleActive(ruleId, active, actorOf(access));
+  } catch (e) {
+    return toFormState(e);
+  }
+  revalidatePath("/hr/payroll/rules");
+  return { success: active ? "Rule switched on" : "Rule switched off" };
+}
+
 export async function recordAppraisalAction(staffId: string, _prev: FormState, formData: FormData): Promise<FormState> {
   try {
     const access = await requireHrAccessForAction(str(formData, "branchId"), "hr.appraisals", "edit");
@@ -151,7 +240,7 @@ export async function requestStaffLeaveAction(_prev: FormState, formData: FormDa
       .safeParse(values(formData));
     if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
     const { staffId, ...rest } = parsed.data;
-    await requestStaffLeave(staffId, rest, actorOf(access));
+    await requestStaffLeave(staffId, { ...rest, unpaid: str(formData, "unpaid") === "on" }, actorOf(access));
   } catch (e) {
     return toFormState(e);
   }
@@ -226,7 +315,9 @@ export async function generatePayslipsAction(runId: string, _prev: FormState, fo
       outcome.skipped.length > 0
         ? ` · Skipped: ${outcome.skipped.map((s) => `${s.name} (${s.employeeCode}) — ${s.reason}`).join("; ")}`
         : "";
-    return { success: `${outcome.generated} payslip${outcome.generated === 1 ? "" : "s"} generated${skipNote}` };
+    const ruleNote = outcome.ruleNotApplied > 0 ? ` · On ${outcome.ruleNotApplied} payslip${outcome.ruleNotApplied === 1 ? "" : "s"} a rule didn't apply — each says why` : "";
+    const lopNote = outcome.totals.lossOfPayDays > 0 ? ` · ${outcome.totals.lossOfPayDays} day${outcome.totals.lossOfPayDays === 1 ? "" : "s"} of unpaid leave deducted` : "";
+    return { success: `${outcome.generated} payslip${outcome.generated === 1 ? "" : "s"} generated${lopNote}${ruleNote}${skipNote}` };
   } catch (e) {
     return toFormState(e);
   }
@@ -245,15 +336,18 @@ export async function processPayrollRunAction(runId: string, _prev: FormState, f
 }
 
 export async function payPayrollRunAction(runId: string, _prev: FormState, formData: FormData): Promise<FormState> {
-  let netMinor: number;
+  let paid: { netMinor: number; deductionsMinor: number; employerMinor: number };
   try {
     const access = await requireHrAccessForAction(str(formData, "branchId"), "hr.payroll", "approve");
-    ({ netMinor } = await payPayrollRun(runId, scopeOf(access), actorOf(access)));
+    paid = await payPayrollRun(runId, scopeOf(access), actorOf(access));
   } catch (e) {
     return toFormState(e);
   }
   revalidatePath(`/hr/payroll/${runId}`);
   revalidatePath("/hr/payroll");
   revalidatePath("/finance/ledger");
-  return { success: `Marked paid — ${(netMinor / 100).toFixed(2)} posted to the ledger` };
+  const owed = paid.deductionsMinor + paid.employerMinor;
+  return {
+    success: `Marked paid — ${(paid.netMinor / 100).toFixed(2)} from the bank${owed > 0 ? `, ${(owed / 100).toFixed(2)} recorded as deductions payable` : ""}, posted to the ledger`,
+  };
 }
