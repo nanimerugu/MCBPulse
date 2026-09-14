@@ -163,6 +163,7 @@ model AcademicYear {
   invoices        Invoice[]
   appraisals      Appraisal[]
   reportCards     ReportCard[]
+  studentOutcomes StudentYearOutcome[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -450,6 +451,42 @@ model FeatureFlagOverride {
 
 // --- People (extends Identity with the school-specific person records) -----
 
+enum YearOutcome {
+  PROMOTED
+  RETAINED
+  GRADUATED
+  UNPLACED
+}
+
+/**
+ * What happened to one student at the end of one academic year.
+ *
+ * Promotion overwrites Student.currentSectionId, so without this row the
+ * only trace of "which class was she in last year, and was she kept back?"
+ * would be scattered across old registers. The unique key also makes the
+ * year-end commit happen once: a second run finds the rows already there.
+ */
+model StudentYearOutcome {
+  id             String       @id @default(uuid())
+  studentId      String
+  student        Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  /** The year that ENDED. */
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  outcome       YearOutcome
+  fromSectionId String?
+  /** Next year's section; null for a graduate or someone left unplaced. */
+  toSectionId   String?
+  note          String?
+
+  decidedByUserId String
+  createdAt       DateTime @default(now())
+
+  @@unique([studentId, academicYearId])
+  @@index([academicYearId])
+}
+
 enum StudentStatus {
   ENQUIRY
   APPLIED
@@ -518,6 +555,7 @@ model Student {
   canteenAccount    CanteenAccount?
   reportCards       ReportCard[]
   periodMarks       PeriodMark[]
+  yearOutcomes      StudentYearOutcome[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt

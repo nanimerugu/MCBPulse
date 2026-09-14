@@ -507,6 +507,34 @@ before this touches anything real.
     Code in `src/modules/finance/ops-charges.ts` (pure),
     `ops-billing.service.ts`, `raiseChargeInvoice` in `invoices.service.ts`.
 
+26. **Year end — working** (`/settings/year-end`). Blueprint 10.2's "at
+    year end: promote, retain, transfer or graduate", done for the whole
+    school at once instead of one Student 360 at a time. Before this, an
+    academic year could only exist because the seed created one.
+    - **Step 1, open next year.** Name and dates (no overlap with any other
+      year), optionally copying this year's sections. Nothing else changes.
+    - **Step 2, plan and commit.** Every enrolled student gets a suggestion
+      they can override:
+      - moving up a grade by grade ORDER (so Grade 10 follows Grade 9), into
+        the same-named section;
+      - the top grade graduating;
+      - a note in words wherever the obvious move isn't possible.
+
+      The whole plan is checked together, and every problem is listed at once:
+      - promote must go up a grade, and keep back must stay in the same grade;
+      - only the top grade can graduate;
+      - no section can be filled past its capacity.
+    - **All or nothing.** One transaction closes the year, opens the next,
+      writes a `StudentYearOutcome` per student (unique per student per year,
+      so it can't happen twice), moves everyone and makes the graduates
+      alumni. It starts with a conditional update on a still-open year, so two
+      people committing together get one year-end. Typing the next year's name
+      confirms it, and it needs both `tenant.academic_years:edit` and
+      `sis.enrollment:edit`. Each student's profile timeline records their move.
+
+    Code in `src/modules/sis/promotion.ts` (pure),
+    `src/modules/sis/year-end.service.ts`.
+
 ## Known limitations / follow-ups
 
 - **Phase 9 is a responsive web portal, not native apps.** There is no React
@@ -663,12 +691,12 @@ before this touches anything real.
 - **Staff logins can't be invited by email.** Connect (Phase 6) owns email.
   Interim: the staff form lets an admin set an initial password; leaving it
   blank creates the login in INVITED state with no way to sign in yet.
-- **Promotion is a section move, not a year-end batch.** Moving a whole
-  class to next year's sections in one action (blueprint 10.2 "at year end:
-  promote, retain, transfer or graduate") is a follow-up; today each student
-  is promoted from their profile, and the prior section survives only in the
-  audit timeline — a `StudentSectionHistory` table is the right fix when
-  report cards need it.
+- **The year-end moves students, not the rest of the school.** Timetables
+  and teaching assignments belong to a year's sections and are not carried
+  into the next year, so teachers see no classes until they are set up again.
+  A committed year-end can't be undone from the screen (it is one audited
+  transaction, reversible only by hand in the database), and withdrawals and
+  transfers at year end still go through each Student 360.
 - **Sessions are validated against the database on every request.**
   `getViewerContext()` refuses a JWT whose user no longer exists or isn't
   ACTIVE. Found when a re-seeded dev database left a browser holding a valid

@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui";
 const SETTINGS = [
   { href: "/settings/users", title: "Users & roles", description: "Who has which role, and where." },
   { href: "/settings/academic-structure", title: "Academic structure", description: "Grades and sections for the current academic year." },
+  { href: "/settings/year-end", title: "Year end", description: "Open next year, decide every student's move, and switch years in one step." },
 ];
 
 export default function SettingsIndexPage() {
